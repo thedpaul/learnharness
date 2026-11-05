@@ -16,6 +16,7 @@ import android.webkit.WebView;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Locale;
 
 /**
  * The "android" dictation engine: Android's SpeechRecognizer, exposed to the
@@ -24,8 +25,10 @@ import java.util.ArrayList;
  * result is sent to the page, which inserts the whole transcript at the end
  * (the same deferred behavior as the desktop engines).
  *
- * Prefers the on-device recognizer (Android 12+) and falls back to the
- * phone's default recognition service when the language isn't installed.
+ * Tries, in order: the on-device recognizer (Android 12+), the phone's
+ * default recognition service (network allowed), and that service in the
+ * phone's own language. Recognizers want a regional tag ("en-US"), so a
+ * bare language code from the settings is expanded first.
  */
 final class SpeechBridge implements RecognitionListener {
 	static final int REQUEST_MIC = 41;
@@ -38,6 +41,8 @@ final class SpeechBridge implements RecognitionListener {
 	private boolean stopping;
 	private boolean listening;
 	private boolean onDevice;
+	/** 0 = on-device, 1 = default service, 2 = default service in the phone's language. */
+	private int stage;
 	private String language = "";
 	private String pendingLanguage;
 
@@ -65,10 +70,11 @@ final class SpeechBridge implements RecognitionListener {
 			activity.requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQUEST_MIC);
 			return;
 		}
-		language = lang;
+		language = regionalTag(lang);
 		active = true;
 		stopping = false;
 		onDevice = Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(activity);
+		stage = onDevice ? 0 : 1;
 		if (!onDevice && !SpeechRecognizer.isRecognitionAvailable(activity)) {
 			active = false;
 			emitError("This phone has no speech recognition service");
@@ -90,8 +96,8 @@ final class SpeechBridge implements RecognitionListener {
 		if (!active || recognizer == null) return;
 		Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
 		intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-		if (!language.isEmpty()) intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
-		intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+		if (stage < 2 && !language.isEmpty()) intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
+		intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, stage == 0);
 		intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
 		intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
 		intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L);
@@ -146,10 +152,17 @@ final class SpeechBridge implements RecognitionListener {
 		if (!active) return;
 		boolean languageMissing = error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED
 			|| error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE;
-		if (onDevice && (languageMissing || error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_SERVER)) {
+		if (stage == 0 && (languageMissing || error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_SERVER)) {
 			// No on-device model for this language: use the default service.
 			onDevice = false;
+			stage = 1;
 			create();
+			if (stopping) end(); else listen();
+			return;
+		}
+		if (stage == 1 && languageMissing && !language.isEmpty()) {
+			// The service can't take this tag: let it use the phone's language.
+			stage = 2;
 			if (stopping) end(); else listen();
 			return;
 		}
@@ -159,6 +172,36 @@ final class SpeechBridge implements RecognitionListener {
 		active = false;
 		emitError(describe(error));
 		end();
+	}
+
+	/** "en" → "en-US" (or the phone's own region when it speaks that language). */
+	static String regionalTag(String lang) {
+		if (lang.isEmpty() || lang.contains("-")) return lang;
+		Locale phone = Locale.getDefault();
+		if (phone.getLanguage().equals(lang) && !phone.getCountry().isEmpty()) return phone.toLanguageTag();
+		switch (lang) {
+			case "en": return "en-US";
+			case "pt": return "pt-BR";
+			case "zh": return "zh-CN";
+			case "ja": return "ja-JP";
+			case "ko": return "ko-KR";
+			case "hi": return "hi-IN";
+			case "da": return "da-DK";
+			case "sv": return "sv-SE";
+			case "nb": case "no": return "nb-NO";
+			case "cs": return "cs-CZ";
+			case "el": return "el-GR";
+			case "uk": return "uk-UA";
+			case "vi": return "vi-VN";
+			case "he": return "he-IL";
+			case "ar": return "ar-SA";
+			case "et": return "et-EE";
+			case "sl": return "sl-SI";
+			case "ms": return "ms-MY";
+			case "ta": return "ta-IN";
+			case "bn": return "bn-IN";
+			default: return lang + "-" + lang.toUpperCase(Locale.ROOT);
+		}
 	}
 
 	private static String describe(int error) {
