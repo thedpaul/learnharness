@@ -58,3 +58,6 @@ export { customProviderGet, customProviderMutation } from "./custom-provider-htt
 export {
 	MAX_DICTATION_PCM_BYTES, loadWhisper, transcribeWithEndpoint, transcribeWithWhisper,
 } from "./transcribe.ts";
+export {
+	beginSignIn, configureSync, finishSignIn, setAutoSync, signOut, syncNow, syncStatus, type SyncStatus,
+} from "./sync/index.ts";
