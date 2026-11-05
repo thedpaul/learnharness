@@ -226,15 +226,16 @@ for (const source of ["none", "file", "env"] as const) test(`Language is below t
 	await f.render(<KeysSection />);
 	const group = byTest("group-dictation");
 	const rows = group.lastElementChild!.children;
-	assert.equal(rows[0]!.getAttribute("data-testid"), "key-deepgram_api_key");
-	assert.equal(rows[1]!.getAttribute("data-testid"), "row-dictation-language");
-	assert.equal(rows[2]!.getAttribute("data-testid"), "dictation-setup-hint");
+	assert.equal(rows[0]!.getAttribute("data-testid"), "row-dictation-engine");
+	assert.equal(rows[1]!.getAttribute("data-testid"), "key-deepgram_api_key");
+	assert.equal(rows[2]!.getAttribute("data-testid"), "row-dictation-language");
+	assert.equal(rows[3]!.getAttribute("data-testid"), "dictation-setup-hint");
 	assert.equal(byTest("dictation-setup-hint").textContent, "Create a Deepgram API key with the Member role or higher, then add it above.");
 	assert.match(byTest("dictation-setup-hint").className, /text-muted-foreground/);
 	assert.equal(byTest("dictation-setup-hint").querySelector("a")!.href, "https://console.deepgram.com/");
 	assert.equal(byTest("dictation-setup-hint").querySelector("a")!.textContent, "Deepgram API key");
 	assert.equal(byTest("dictation-setup-hint").querySelectorAll("a").length, 1);
-	assert.match(rows[1]!.querySelector(".font-prose")!.className, /text-\(length:--lh-prose-size\)/);
+	assert.match(rows[2]!.querySelector(".font-prose")!.className, /text-\(length:--lh-prose-size\)/);
 	assert.equal(trigger().disabled, false, "language is independent of key ownership");
 	await click(byTest("key-deepgram_api_key-row"));
 	if (source !== "env") assert.ok(byTest("key-deepgram_api_key-editor"));
@@ -297,4 +298,24 @@ test("clearing each search restores the complete catalog order with Multilingual
 		await search("");
 		assert.deepEqual(order(), expected, `catalog order after clearing ${query}`);
 	}
+});
+
+test("a keyless engine hides the Deepgram row, shows its own settings, and language writes keep the engine", async () => {
+	const f = await fixture();
+	f.state.record = { version: 1, dictation: { language: "en", engine: "whisper", whisperModel: "onnx-community/whisper-tiny" } };
+	await act(async () => { notifySettingsSaved("dictation"); });
+	f.state.keys = [{
+		id: "DEEPGRAM_API_KEY", info: AUTH_KEYS.find((key) => key.id === "DEEPGRAM_API_KEY")!,
+		present: false, masked: null, source: "none", shadowedByEnv: false,
+	}];
+	const { KeysSection } = await import("../components/settings/keys-section.tsx");
+	await f.render(<KeysSection />);
+	assert.equal(document.querySelector('[data-testid="key-deepgram_api_key"]'), null);
+	assert.equal(document.querySelector<HTMLSelectElement>('[data-testid="dictation-engine"]')!.value, "whisper");
+	assert.ok(byTest("row-dictation-whisper-model"));
+	assert.match(byTest("dictation-setup-hint").textContent!, /runs on this device/);
+	await click(trigger());
+	await search("Polish");
+	await key(input(), "Enter");
+	assert.deepEqual(f.state.record.dictation, { language: "pl", engine: "whisper", whisperModel: "onnx-community/whisper-tiny" });
 });

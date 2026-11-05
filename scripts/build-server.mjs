@@ -69,6 +69,25 @@ for (const secret of ["auth.json", ...subscriptionSecrets, ".env", ".env.local"]
 // generic dist/** earlier broke pi-ai / pi-agent-core's runtime dist/.
 // Never touch ROOT/dist or ROOT/node_modules/electron (the running app
 // and the build runtime); native canvas/resvg packages stay untouched.
+// onnxruntime-node (local Whisper dictation) runs on the CPU provider only:
+// its GPU provider libraries (~260MB on Linux) and other platforms'
+// binaries never load, so the trace must not ship them.
+const ortBin = path.join(STANDALONE, "node_modules", "onnxruntime-node", "bin", "napi-v6");
+if (exists(ortBin)) {
+	for (const platform of fs.readdirSync(ortBin)) {
+		for (const arch of fs.readdirSync(path.join(ortBin, platform))) {
+			const dir = path.join(ortBin, platform, arch);
+			if (platform !== process.platform || arch !== process.arch) {
+				fs.rmSync(dir, { recursive: true, force: true });
+				continue;
+			}
+			for (const file of fs.readdirSync(dir)) {
+				if (/^libonnxruntime_providers_(cuda|tensorrt)/.test(file)) fs.rmSync(path.join(dir, file), { force: true });
+			}
+		}
+	}
+}
+
 for (const extra of ["dist", path.join("node_modules", "electron")]) {
 	const target = path.join(STANDALONE, extra);
 	if (exists(target)) {

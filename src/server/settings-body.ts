@@ -30,7 +30,7 @@ import type {
 import { BACKGROUND_MODEL_ROLES, CACHE_RETENTIONS, COMPACTION_THRESHOLD_FLOOR, CUSTOM_MODEL_PIN_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS } from "../core/settings.ts";
 import { WRITABLE_TOOL_KEYS } from "../core/pending.ts";
 import { isSearchEngineId, SEARCH_ENGINES } from "../core/search.ts";
-import { isDictationLanguage } from "../core/dictation.ts";
+import { isDictationEngine, isDictationLanguage, isTranscriptionEndpointUrl, isWhisperModel } from "../core/dictation.ts";
 import { parseFileAccessSettings } from "../core/file-access.ts";
 
 /** Parsed-or-rejected — `ok: false` carries the 400's error message. */
@@ -407,13 +407,34 @@ export function parseCompactionSettingsBody(body: unknown): SettingsBodyResult<C
 	return { ok: true, settings };
 }
 
-/** dictation: { language?: one of Nova-3's supported language codes } */
+/** dictation: { language?, engine?, whisperModel?, endpointUrl?, endpointModel? } */
 export function parseDictationSettingsBody(body: unknown): SettingsBodyResult<DictationSettings> {
 	const raw = asRecord(body);
 	if (!raw) return { ok: false, error: "Invalid JSON body" };
-	if (raw.language === undefined) return { ok: true, settings: {} };
-	if (!isDictationLanguage(raw.language)) return { ok: false, error: "Unsupported dictation language" };
-	return { ok: true, settings: { language: raw.language } };
+	const settings: DictationSettings = {};
+	if (raw.language !== undefined) {
+		if (!isDictationLanguage(raw.language)) return { ok: false, error: "Unsupported dictation language" };
+		settings.language = raw.language;
+	}
+	if (raw.engine !== undefined) {
+		if (!isDictationEngine(raw.engine)) return { ok: false, error: "Unsupported dictation engine" };
+		settings.engine = raw.engine;
+	}
+	if (raw.whisperModel !== undefined) {
+		if (!isWhisperModel(raw.whisperModel)) return { ok: false, error: "Unsupported Whisper model" };
+		settings.whisperModel = raw.whisperModel;
+	}
+	if (raw.endpointUrl !== undefined) {
+		if (!isTranscriptionEndpointUrl(raw.endpointUrl)) return { ok: false, error: "endpointUrl must be an http(s) URL" };
+		settings.endpointUrl = raw.endpointUrl;
+	}
+	if (raw.endpointModel !== undefined) {
+		if (typeof raw.endpointModel !== "string" || !raw.endpointModel.trim() || raw.endpointModel.length > 200) {
+			return { ok: false, error: "endpointModel must be a non-empty model name" };
+		}
+		settings.endpointModel = raw.endpointModel.trim();
+	}
+	return { ok: true, settings };
 }
 
 /** The custom endpoint's per-model pins (PATCH /api/custom-provider): the

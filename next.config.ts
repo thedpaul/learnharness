@@ -98,6 +98,16 @@ const nextConfig: NextConfig = {
 			"node_modules/@earendil-works/pi-ai/dist/auth/oauth/{load,github-copilot,xai,device-code}.js",
 			"node_modules/@earendil-works/pi-ai/dist/utils/sleep.js",
 			"node_modules/@earendil-works/pi-agent-core/dist/**/*.json",
+			// onnxruntime-node: the .node binding is traced, but its sibling
+			// shared library (dlopen'd via rpath) is not — load fails without it.
+			// Builds run per-OS, so only this platform's CPU runtime ships: the
+			// package also carries every other platform plus ~260MB of Linux
+			// CUDA/TensorRT providers that CPU Whisper never loads.
+			`node_modules/onnxruntime-node/bin/napi-v6/${process.platform}/${process.arch}/{onnxruntime_binding.node,libonnxruntime.*,onnxruntime.dll,DirectML.dll,dxcompiler.dll,dxil.dll}`,
+			// transformers.js loads the JS package at runtime (createRequire), so
+			// the tracer never sees it — only the bin/ include above landed.
+			"node_modules/onnxruntime-node/{package.json,dist/**/*}",
+			"node_modules/onnxruntime-common/{package.json,dist/**/*}",
 			// Next 16.3.2 native Turbopack applies unanchored excludes while
 			// traversing modules; **/data/**/* still prunes gcp-metadata and
 			// its private runtime chain. Includes are applied after traversal.
@@ -118,6 +128,11 @@ const nextConfig: NextConfig = {
 		"@napi-rs/canvas", // native binding — bundling breaks the .node require
 		"@silvia-odwyer/photon-node", // CJS loads its adjacent WASM from disk
 		"@resvg/resvg-js", // native binding — same
+		// Local Whisper dictation: runtime-loaded ONNX + a native binding —
+		// bundling onnxruntime-node breaks route builds (the old embedder's
+		// lesson, wave 6).
+		"@huggingface/transformers",
+		"onnxruntime-node",
 	],
 };
 
