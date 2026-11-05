@@ -148,6 +148,9 @@ public final class ServerService extends Service {
 		return dir;
 	}
 
+	private static LocalProxy proxy;
+	private static String proxyUrl;
+
 	private void start(File server, File runtime) throws IOException {
 		int port;
 		try (ServerSocket s = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) { port = s.getLocalPort(); }
@@ -177,6 +180,19 @@ public final class ServerService extends Service {
 		env.put("LH_CLAUDE_BIN", nativeDir + "/libclaude.so");
 		env.put("LH_CLAUDE_LOADER", nativeDir + "/libldmusl.so");
 		env.put("DISABLE_AUTOUPDATER", "1");
+		// Claude Code can't resolve hostnames itself on Android (musl reads the
+		// missing /etc/resolv.conf); route its traffic through LocalProxy.
+		if (proxy == null) {
+			byte[] pw = new byte[16];
+			new SecureRandom().nextBytes(pw);
+			StringBuilder pwHex = new StringBuilder();
+			for (byte b : pw) pwHex.append(String.format("%02x", b));
+			proxy = new LocalProxy("lh", pwHex.toString());
+			proxyUrl = "http://lh:" + pwHex + "@127.0.0.1:" + proxy.port();
+		}
+		env.put("HTTPS_PROXY", proxyUrl);
+		env.put("HTTP_PROXY", proxyUrl);
+		env.put("NO_PROXY", "127.0.0.1,localhost,::1");
 		pb.redirectErrorStream(true);
 		pb.redirectOutput(logFile());
 
