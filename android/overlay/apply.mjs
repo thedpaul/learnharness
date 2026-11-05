@@ -308,6 +308,63 @@ edit("components/dictation.tsx", [[
 					<span className="lh-dictate-label">Stop</span>
 				</button>`,
 ]]);
+// Attachments: LearnHarness attaches by path, and a WebView File has none.
+// The app's LHAndroidFiles bridge opens the system picker, copies the
+// selection into ~/attachments/<run>/ and answers with those paths.
+edit("components/attach-files-button.tsx", [[
+	`const noSubscribe = () => () => {};`,
+	`type AndroidFiles = { pickFiles(): void; pickFolder(): void };
+function androidFiles(): AndroidFiles | null {
+	if (typeof window === "undefined") return null;
+	return (window as unknown as { LHAndroidFiles?: AndroidFiles }).LHAndroidFiles ?? null;
+}
+/** Resolves with the copied paths, null on cancel; rejects with the app's message. */
+function androidPick(kind: "files" | "folder"): Promise<string[] | null> {
+	const bridge = androidFiles();
+	if (!bridge) return Promise.resolve(null);
+	return new Promise((resolve, reject) => {
+		const onFiles = (ev: Event) => {
+			const d = (ev as CustomEvent).detail as { type: string; paths?: string[]; message?: string };
+			window.removeEventListener("lh:android-files", onFiles);
+			if (d.type === "picked") resolve(d.paths ?? []);
+			else if (d.type === "error") reject(new Error(d.message ?? "Could not attach the files"));
+			else resolve(null);
+		};
+		window.addEventListener("lh:android-files", onFiles);
+		if (kind === "files") bridge.pickFiles();
+		else bridge.pickFolder();
+	});
+}
+
+const noSubscribe = () => () => {};`,
+], [
+	`() => Boolean(window.lh?.getPathForFile), () => false);`,
+	`() => Boolean(window.lh?.getPathForFile) || androidFiles() !== null, () => false);`,
+], [
+	`		const choose = window.lh?.chooseAttachmentFolder;`,
+	`		const choose = window.lh?.chooseAttachmentFolder
+			?? (androidFiles() ? () => androidPick("folder").then((paths) => paths?.[0] ?? null) : undefined);`,
+], [
+	`	return (
+		<div className="relative shrink-0"`,
+	`	const attachAndroidFiles = async () => {
+		const editor = editorRef.current;
+		setNotice("");
+		try {
+			const paths = await androidPick("files");
+			if (paths && paths.length > 0 && editor?.isConnected && editor === editorRef.current) {
+				editor.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
+			}
+		} catch (error) {
+			setNotice(error instanceof Error ? error.message : "Could not attach the files");
+		}
+	};
+	return (
+		<div className="relative shrink-0"`,
+], [
+	`onClick={() => { setOpen(false); pickerRef.current?.click(); }}>Files</button>`,
+	`onClick={() => { setOpen(false); if (androidFiles()) void attachAndroidFiles(); else pickerRef.current?.click(); }}>Files</button>`,
+]]);
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android phone layout (android/overlay/apply.mjs) */
 .lh-sidebar-backdrop { display: none; }
@@ -325,6 +382,15 @@ html.lh-android, html.lh-android body { overflow-x: hidden; }
 	html.lh-android [data-testid="settings-nav"] > button { flex-shrink: 0; white-space: nowrap; }
 }
 html.lh-android .lh-dictate-label { display: none; }
+/* Recording: the mic stays centered where it was; the dot and level meter
+   would only get a few pixels here, so the button pulses instead. */
+html.lh-android [data-testid="dictation-bar"] { justify-content: center; }
+html.lh-android [data-testid="dictation-bar"] > :not(button):not([data-slot="tooltip-trigger"]) { display: none; }
+html.lh-android [data-testid="dictation-bar"] [data-testid="dictation-toggle"] { animation: lh-rec-pulse 1.4s ease-in-out infinite; }
+@keyframes lh-rec-pulse {
+	0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--destructive) 45%, transparent); }
+	50% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--destructive) 0%, transparent); }
+}
 html.lh-android [data-testid="dictation-toggle"] { min-width: 2.25rem; padding-inline: 0.5rem; backdrop-filter: none; }
 html.lh-android [data-testid="dictation-toggle"]:has(.lh-dictate-error) { color: var(--destructive); border-color: color-mix(in oklab, var(--destructive) 50%, transparent); }
 html.lh-android .lh-dictate-error {

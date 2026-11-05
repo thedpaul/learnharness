@@ -30,6 +30,9 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 
 	private WebView web;
 	private SpeechBridge speech;
+	private FileBridge files;
+	private static final int REQUEST_WEB_FILES = 53;
+	private android.webkit.ValueCallback<Uri[]> pendingWebFiles;
 	private LinearLayout status;
 	private TextView statusText;
 	private Button retry;
@@ -68,6 +71,20 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 			@Override public void onPageFinished(WebView view, String url) { web.setVisibility(View.VISIBLE); status.setVisibility(View.GONE); }
 		});
 		web.setWebChromeClient(new WebChromeClient() {
+			// <input type="file"> (e.g. Extract files…): the system picker.
+			@Override public boolean onShowFileChooser(WebView view, android.webkit.ValueCallback<Uri[]> callback, FileChooserParams params) {
+				if (pendingWebFiles != null) pendingWebFiles.onReceiveValue(null);
+				pendingWebFiles = callback;
+				try {
+					Intent i = params.createIntent();
+					if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+					startActivityForResult(i, REQUEST_WEB_FILES);
+				} catch (Exception e) {
+					pendingWebFiles = null;
+					return false;
+				}
+				return true;
+			}
 			@Override public void onPermissionRequest(PermissionRequest request) {
 				runOnUiThread(() -> {
 					boolean audioOnly = true;
@@ -84,6 +101,8 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 		});
 		speech = new SpeechBridge(this, web);
 		web.addJavascriptInterface(speech, "LHAndroidSpeech");
+		files = new FileBridge(this, web);
+		web.addJavascriptInterface(files, "LHAndroidFiles");
 		rootView.addView(web, new FrameLayout.LayoutParams(-1, -1));
 
 		status = new LinearLayout(this);
@@ -160,6 +179,22 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 			if (granted) pendingWebMic.grant(pendingWebMic.getResources());
 			else pendingWebMic.deny();
 			pendingWebMic = null;
+		}
+	}
+
+	@Override protected void onActivityResult(int code, int resultCode, Intent data) {
+		super.onActivityResult(code, resultCode, data);
+		if (code == FileBridge.REQUEST_FILES || code == FileBridge.REQUEST_FOLDER) { files.onResult(code, resultCode, data); return; }
+		if (code == REQUEST_WEB_FILES && pendingWebFiles != null) {
+			Uri[] result = null;
+			if (resultCode == RESULT_OK && data != null) {
+				if (data.getClipData() != null) {
+					result = new Uri[data.getClipData().getItemCount()];
+					for (int i = 0; i < result.length; i++) result[i] = data.getClipData().getItemAt(i).getUri();
+				} else if (data.getData() != null) result = new Uri[] { data.getData() };
+			}
+			pendingWebFiles.onReceiveValue(result);
+			pendingWebFiles = null;
 		}
 	}
 
