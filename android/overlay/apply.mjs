@@ -391,7 +391,7 @@ html.lh-android [data-testid="dictation-bar"] [data-testid="dictation-toggle"] {
 	0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--destructive) 45%, transparent); }
 	50% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--destructive) 0%, transparent); }
 }
-html.lh-android [data-testid="dictation-toggle"] { min-width: 2.25rem; padding-inline: 0.5rem; backdrop-filter: none; }
+html.lh-android [data-testid="dictation-toggle"] { min-width: 2.25rem; padding-inline: 0.5rem; justify-content: center; gap: 0; backdrop-filter: none; }
 html.lh-android [data-testid="dictation-toggle"]:has(.lh-dictate-error) { color: var(--destructive); border-color: color-mix(in oklab, var(--destructive) 50%, transparent); }
 html.lh-android .lh-dictate-error {
 	position: absolute; bottom: 100%; left: 0.75rem; right: 0.75rem; margin-bottom: 0.25rem;
