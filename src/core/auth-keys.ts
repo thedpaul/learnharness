@@ -37,6 +37,12 @@ export const AUTH_KEYS: readonly AuthKeyInfo[] = [
 		docsUrl: "https://console.deepgram.com/",
 	},
 	{
+		id: "STT_ENDPOINT_API_KEY",
+		label: "Transcription endpoint",
+		description: "Optional bearer key for the OpenAI-compatible transcription endpoint used by dictation. Local servers usually need none.",
+		docsUrl: "https://github.com/ggml-org/whisper.cpp/tree/master/examples/server",
+	},
+	{
 		id: "TAVILY_API_KEY",
 		label: "Tavily",
 		description: "Web-search engine for the researcher sub-agent (AI-native search API). Setting the key activates it — no engine toggle needed.",
@@ -200,6 +206,8 @@ export function validateKeyShape(id: string, rawValue: string): KeyShapeResult {
 			return value.startsWith("fc-")
 				? nonEmpty(20)
 				: { ok: false, error: `${id} must start with "fc-" (Firecrawl's key format)` };
+		case "STT_ENDPOINT_API_KEY":
+			return nonEmpty(4);
 		case "DEEPGRAM_API_KEY":
 			// No public format — the length floor only catches truncated pastes.
 			return nonEmpty(20);

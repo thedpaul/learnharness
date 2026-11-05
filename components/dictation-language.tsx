@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { DICTATION_LANGUAGES, type DictationLanguage } from "@/src/core";
+import {
+	DICTATION_ENGINES, DICTATION_ENGINE_LABELS, DICTATION_LANGUAGES, FACTORY_SETTINGS, WHISPER_MODELS,
+	isDictationEngine, isTranscriptionEndpointUrl, isWhisperModel, type DictationLanguage,
+} from "@/src/core";
 import { MenuShell } from "@/components/menu-shell";
 import { Hint } from "@/components/ui/hint";
-import { SettingsMenuTrigger, SettingsRow } from "@/components/settings/controls";
+import { CommitInput, SettingsMenuTrigger, SettingsRow, ThinSelect } from "@/components/settings/controls";
 import { SearchMenuList } from "@/components/settings/search-menu-list";
 import { useDictationActive } from "@/components/dictation-state";
 import { useDictationLanguage } from "@/components/dictation-preference";
@@ -104,5 +107,77 @@ function DictationLanguagePicker({ preference, disabled }: {
 				/>
 			</div>
 		</MenuShell>}
+	</>;
+}
+
+/** Engine choice plus the active engine's own settings. Every change is one
+ *  section PUT through the shared preference store; locked while a run is live. */
+export function DictationEngineSettings() {
+	const { section, language, saving, error, save } = useDictationLanguage();
+	const active = useDictationActive();
+	const engine = section.engine ?? FACTORY_SETTINGS.dictation.engine;
+	const whisperModel = section.whisperModel ?? FACTORY_SETTINGS.dictation.whisperModel;
+	const locked = active || saving || language === undefined;
+	const [urlError, setUrlError] = useState<string | null>(null);
+
+	return <>
+		<SettingsRow label="Engine" testid="row-dictation-engine" dimmed={active} hint={error ?? undefined}>
+			<ThinSelect
+				value={engine}
+				ariaLabel="Dictation engine"
+				testid="dictation-engine"
+				disabled={locked}
+				onChange={(next) => {
+					if (!isDictationEngine(next)) return;
+					void save({ engine: next }).then((ok) => {
+						// Start the one-time model download as soon as Whisper is chosen.
+						if (ok && next === "whisper") void fetch("/api/stt/transcribe").catch(() => {});
+					});
+				}}
+			>
+				{DICTATION_ENGINES.map((id) => <option key={id} value={id}>{DICTATION_ENGINE_LABELS[id]}</option>)}
+			</ThinSelect>
+		</SettingsRow>
+		{engine === "whisper" && <SettingsRow label="Whisper model" hint="Larger is more accurate but slower" testid="row-dictation-whisper-model" dimmed={active}>
+			<ThinSelect
+				value={whisperModel}
+				ariaLabel="Whisper model"
+				testid="dictation-whisper-model"
+				disabled={locked}
+				onChange={(next) => {
+					if (!isWhisperModel(next)) return;
+					void save({ whisperModel: next }).then((ok) => {
+						if (ok) void fetch("/api/stt/transcribe").catch(() => {});
+					});
+				}}
+			>
+				{WHISPER_MODELS.map((m) => <option key={m.id} value={m.id}>{`${m.label} (${m.size})`}</option>)}
+			</ThinSelect>
+		</SettingsRow>}
+		{engine === "endpoint" && <>
+			<SettingsRow label="Endpoint URL" hint={urlError ?? "e.g. http://127.0.0.1:8080/v1"} testid="row-dictation-endpoint-url" dimmed={active}>
+				<CommitInput
+					value={section.endpointUrl ?? ""}
+					placeholder="http://127.0.0.1:8080/v1"
+					ariaLabel="Transcription endpoint URL"
+					testid="dictation-endpoint-url"
+					onCommit={(next) => {
+						if (locked) return;
+						if (next && !isTranscriptionEndpointUrl(next)) { setUrlError("Enter an http(s) URL"); return; }
+						setUrlError(null);
+						void save({ endpointUrl: next || undefined });
+					}}
+				/>
+			</SettingsRow>
+			<SettingsRow label="Endpoint model" testid="row-dictation-endpoint-model" dimmed={active}>
+				<CommitInput
+					value={section.endpointModel ?? ""}
+					placeholder="whisper-1"
+					ariaLabel="Transcription endpoint model"
+					testid="dictation-endpoint-model"
+					onCommit={(next) => { if (!locked) void save({ endpointModel: next || undefined }); }}
+				/>
+			</SettingsRow>
+		</>}
 	</>;
 }

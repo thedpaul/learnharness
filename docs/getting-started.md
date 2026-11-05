@@ -13,7 +13,7 @@ Open **Settings → Providers** and configure a connection:
 
 Choose **Strong**, **Cheap**, and **Vision** models in Settings. There are no factory model selections. New sessions start with Strong; background roles use their assigned slots or role overrides. A model selected inside an existing session belongs to that session and does not change background-role choices.
 
-Optional web search supports Tavily, Brave, Exa, Firecrawl, and hosted Ollama search; configure a key for the engine you want to use. Research can still fetch known URLs without a search key. Dictation has its own service key below.
+Optional web search supports Tavily, Brave, Exa, Firecrawl, and hosted Ollama search; configure a key for the engine you want to use. Research can still fetch known URLs without a search key. Dictation can use a Deepgram key, a local Whisper model, or your own transcription server (see below).
 
 ## Start a session
 
@@ -27,11 +27,15 @@ Sessions are saved locally, including earlier messages when context is compacted
 
 ## Dictation
 
-1. Create a [Deepgram API key](https://console.deepgram.com/) with the **Member role or higher**, required for [short-lived token minting](https://developers.deepgram.com/reference/auth/tokens/grant).
-2. Add it under **Settings → Providers → Dictation** and choose the language below the key. **Multilingual** supports automatic recognition and mixed-language speech.
-3. Use the microphone or **Mod+D** to start and stop. Review the text before sending. **Esc cancellation discards the pending transcript**; stop normally to keep it.
+Choose an **Engine** under **Settings → Providers → Dictation**:
 
-Audio streams from your browser directly to Deepgram using a short-lived token. A `403 Insufficient permissions` error while obtaining that token can mean the key's role is insufficient.
+- **Deepgram (cloud).** Create a [Deepgram API key](https://console.deepgram.com/) with the **Member role or higher** (needed for [short-lived token minting](https://developers.deepgram.com/reference/auth/tokens/grant)) and add it below the engine. Audio streams from your browser straight to Deepgram using a short-lived token. A `403 Insufficient permissions` error while getting that token can mean the key's role is too low.
+- **Whisper (on this device).** No key or account. Pick a model (Tiny ~65 MB through Large v3 Turbo ~1.1 GB; Base is the default). It downloads once from Hugging Face into the data directory's `models/` folder, and after that dictation runs fully offline on the app's local server. Set the language you speak: local Whisper can't auto-detect, so **Multilingual** transcribes as English.
+- **Transcription endpoint.** Any OpenAI-compatible `/v1/audio/transcriptions` server, e.g. a local [whisper.cpp server](https://github.com/ggml-org/whisper.cpp/tree/master/examples/server) or [speaches](https://speaches.ai/). Enter the base URL (for example `http://127.0.0.1:8080/v1`) and, if the server needs one, the model name (default `whisper-1`). The optional key is sent as a bearer token. The app's server makes the request, so the endpoint doesn't need CORS.
+
+Then choose the language. With Deepgram or an endpoint, **Multilingual** recognizes the language automatically.
+
+Use the microphone or **Mod+D** to start and stop. Review the text before sending. **Esc cancellation discards the pending transcript**; stop normally to keep it. Whisper and endpoint runs transcribe the whole recording once you stop, so expect a short spinner. The first Whisper run also waits for the model download.
 
 ## Use local files in a session
 
@@ -64,7 +68,7 @@ Chats, graph records, settings, and credentials live on your machine. Packaged d
 
 API-key files sit beside `data`, not inside it. They are plaintext with restrictive file permissions, not an encrypted vault. Keep complete profiles private; do not share credential files or raw debug captures in bug reports.
 
-**Local storage does not mean local-only processing.** Configured models, subscription/CLI services, web research, and dictation can receive content. A local custom model is a separate setup choice, not an offline guarantee for other enabled services.
+**Local storage does not mean local-only processing.** Configured models, subscription/CLI services, web research, and cloud dictation (Deepgram or a remote endpoint) can receive content. A local custom model is a separate setup choice, not an offline guarantee for other enabled services.
 
 Click the context/cost row beneath the composer for Session stats. Dollar figures estimate known API costs; subscription, CLI, and custom-endpoint usage are not treated as free. See [context, caching, and costs](compaction-accounting.md) for the details.
 
