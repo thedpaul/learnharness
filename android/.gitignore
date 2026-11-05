@@ -1,0 +1,8 @@
+# Build-time outputs of the Android pipeline (build.sh)
+/out/
+/.gradle/
+/app/build/
+/build/
+/app/src/main/jniLibs/
+/app/src/main/assets/
+/local.properties
