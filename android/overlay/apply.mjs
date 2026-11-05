@@ -292,6 +292,22 @@ edit("components/dictation.tsx", [[
 	`(settings.engine ?? "deepgram") === "deepgram"`,
 	`(settings.engine ?? "android") === "deepgram"`,
 ]]);
+// Dictation on phones: the composer row is too narrow for the labelled
+// button, so it collapses to the mic icon (and the recording "Stop" to its
+// icon); an error shows as a pill above the row (no hover tooltips on touch).
+edit("components/dictation.tsx", [[
+	`<span className="max-w-full truncate">{error ?? "Dictate"}</span>`,
+	`{error
+						? <span className="lh-dictate-error max-w-full truncate">{error}</span>
+						: <span className="lh-dictate-label max-w-full truncate">Dictate</span>}`,
+], [
+	`<MicIcon className="size-3.5" />}
+					Stop
+				</button>`,
+	`<MicIcon className="size-3.5" />}
+					<span className="lh-dictate-label">Stop</span>
+				</button>`,
+]]);
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android phone layout (android/overlay/apply.mjs) */
 .lh-sidebar-backdrop { display: none; }
@@ -302,11 +318,20 @@ fs.appendFileSync(path.join(root, "app/globals.css"), `
 html.lh-android, html.lh-android body { overflow-x: hidden; }
 @media (max-width: 767px) {
 	/* Settings: full-screen sheet, the section nav becomes a scrolling tab row. */
-	html.lh-android .settings-dialog-pop { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
+	html.lh-android .settings-dialog-pop { animation: none; width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
 	html.lh-android .settings-dialog-pop > div:has(> [data-testid="settings-nav"]) { flex-direction: column; }
 	html.lh-android [data-testid="settings-nav"] { width: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); scrollbar-width: none; }
 	html.lh-android [data-testid="settings-nav"]::-webkit-scrollbar { display: none; }
 	html.lh-android [data-testid="settings-nav"] > button { flex-shrink: 0; white-space: nowrap; }
+}
+html.lh-android .lh-dictate-label { display: none; }
+html.lh-android [data-testid="dictation-toggle"] { min-width: 2.25rem; padding-inline: 0.5rem; backdrop-filter: none; }
+html.lh-android [data-testid="dictation-toggle"]:has(.lh-dictate-error) { color: var(--destructive); border-color: color-mix(in oklab, var(--destructive) 50%, transparent); }
+html.lh-android .lh-dictate-error {
+	position: absolute; bottom: 100%; left: 0.75rem; right: 0.75rem; margin-bottom: 0.25rem;
+	white-space: normal; text-align: center; pointer-events: none; z-index: 10;
+	padding: 0.25rem 0.5rem; border-radius: 0.375rem; border: 1px solid var(--border);
+	background: var(--card); color: var(--destructive);
 }
 `);
 console.log("[overlay] app/globals.css (android phone layout)");
