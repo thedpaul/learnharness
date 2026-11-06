@@ -147,7 +147,12 @@ export function MenuShell({
 		focusedOnceRef.current = true;
 		const el = menuRef.current;
 		if (!el) return;
-		const input = el.querySelector<HTMLElement>("input");
+		// A touch screen lands on the body even in a search menu: focusing the
+		// search would raise the keyboard over the list (on a phone in
+		// landscape it leaves room for one row). A tap on the search still
+		// searches; the keyboard comes up only then.
+		const touch = typeof window.matchMedia === "function" && window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+		const input = touch ? null : el.querySelector<HTMLElement>("input");
 		(input ?? el).focus();
 	}, [placed]);
 
