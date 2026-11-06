@@ -171,7 +171,7 @@ function runChecks(
 					const results = await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId) });
 					const at = new Date().toISOString();
 					const lines = results.map((r) =>
-						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, notes: r.notes }),
+						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, explanation: r.explanation, notes: r.notes }),
 					);
 					if (lines.length) {
 						fs.mkdirSync(PATHS.data, { recursive: true });

@@ -181,6 +181,17 @@ test("checks: an older version still counts but is stale; a higher version beats
 	assert.equal(checkIsStale(undefined), false);
 });
 
+test("checks: a check's explanation (written for shuffled options) replaces the tutor's", () => {
+	const text = [
+		JSON.stringify({ card: "a", at: "2030-01-01", v: REVIEW_CHECK_VERSION, verdict: "ok", explanation: "Squaring is skipped by $\\sigma$-sum." }),
+		JSON.stringify({ card: "b", at: "2030-01-01", v: REVIEW_CHECK_VERSION, verdict: "ok", explanation: "  " }),
+	].join("\n");
+	const checks = parseReviewChecks(text);
+	const base = { ...card(), explanation: "(b) forgets the squaring." };
+	assert.equal(checkedCard(base, checks.get("a")).explanation, "Squaring is skipped by $\\sigma$-sum.");
+	assert.equal(checkedCard(base, checks.get("b")).explanation, "(b) forgets the squaring.", "a blank rewrite keeps the tutor's");
+});
+
 test("review settings: parse, schedule times, pause, today's count", async () => {
 	const { parseReviewSettings, reviewSettingsOf, nextReviewTime, lastReviewTime, remindersPaused, reviewsToday, DEFAULT_REVIEW_SETTINGS } = await import("../src/core/review.ts");
 	assert.deepEqual(reviewSettingsOf(null), DEFAULT_REVIEW_SETTINGS);
