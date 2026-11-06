@@ -31,6 +31,7 @@ import {
 } from "../core/index.ts";
 import { resolveRoleSpec } from "../core/settings-resolution.ts";
 import { providerKeyPresent } from "./keys.ts";
+import { lanPaired } from "./sync/lan.ts";
 import { stores } from "./stores.ts";
 
 const LEDGER = () => path.join(PATHS.data, "reviews.jsonl");
@@ -74,6 +75,10 @@ const readChecks = (): Map<string, ReviewCheck> => parseReviewChecks(readText(CH
 const BATCH = 6;
 /** After a failed run (no model, offline), wait before trying again. */
 const RETRY_MS = 10 * 60_000;
+/** A phone paired with a computer leaves fresh cards to the computer (the
+ *  checks sync back) and only checks what is still unchecked after this. */
+const PHONE_DEFER_MS = 24 * 60 * 60_000;
+const deferToComputer = () => process.env.LH_PLATFORM === "android" && lanPaired();
 
 type CheckerSlot = { running?: Promise<void>; lastError?: string; failedAt?: number };
 const checkerKey = "__lhReviewChecker";
@@ -107,7 +112,8 @@ export function kickReviewChecks(): Promise<void> {
 	const run = (async () => {
 		try {
 			const checks = readChecks();
-			const unchecked = allCards().filter((c) => !checks.has(c.id));
+			const defer = deferToComputer();
+			const unchecked = allCards().filter((c) => !checks.has(c.id) && (!defer || Date.now() - Date.parse(c.firstAnswer.at) > PHONE_DEFER_MS));
 			if (unchecked.length === 0) return;
 			const engine = checker === checkCards ? auditorEngine() : undefined;
 			const byChat = new Map<string, ReviewCard[]>();
