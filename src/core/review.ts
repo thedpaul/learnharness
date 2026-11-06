@@ -19,7 +19,7 @@
  * CALIBRATION reads every confidence-rated answer (sessions and reviews):
  * per confidence bin, how often the learner was actually right.
  */
-import type { QuestionAnswerData } from "./question-core.ts";
+import { seededRandom, type QuestionAnswerData } from "./question-core.ts";
 
 export interface ReviewCard {
 	/** `${chatId}:${toolCallId}` — stable across syncs and devices. */
@@ -382,4 +382,51 @@ export function checkedCard(card: ReviewCard, check: ReviewCheck | undefined): R
 			return note ? { ...o, note } : o;
 		}),
 	};
+}
+
+// ─── related topics (the "mix related topics" toggle) ──────────────────────
+
+/** Fields per topic (session id), from data/review-fields.jsonl: one line per
+ *  labelling, `{ topic, fields, at }`, the newest line per topic wins. A
+ *  model labels each topic once (src/agent/subagents/topic-fielder.ts). */
+export function parseTopicFields(text: string): Map<string, string[]> {
+	const newest = new Map<string, { at: string; fields: string[] }>();
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		let raw: unknown;
+		try {
+			raw = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		const r = raw as { topic?: unknown; fields?: unknown; at?: unknown };
+		if (typeof r.topic !== "string" || typeof r.at !== "string" || !Array.isArray(r.fields)) continue;
+		const fields = r.fields.filter((f): f is string => typeof f === "string" && f.trim() !== "").map((f) => f.trim());
+		const prev = newest.get(r.topic);
+		if (!prev || r.at > prev.at) newest.set(r.topic, { at: r.at, fields });
+	}
+	return new Map([...newest].map(([topic, v]) => [topic, v.fields]));
+}
+
+const fieldKey = (f: string) => f.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** The topics sharing at least one field with `topic` (never itself). */
+export function relatedTopics(topic: string, fields: ReadonlyMap<string, readonly string[]>): string[] {
+	const mine = new Set((fields.get(topic) ?? []).map(fieldKey).filter(Boolean));
+	if (mine.size === 0) return [];
+	return [...fields]
+		.filter(([other, theirs]) => other !== topic && theirs.some((f) => mine.has(fieldKey(f))))
+		.map(([other]) => other);
+}
+
+/** A mixed round: the due cards of several topics in a seeded random
+ *  order, so related topics interleave instead of coming in blocks. */
+export function mixedOrder<T>(cards: readonly T[], seed: string): T[] {
+	const rand = seededRandom(seed);
+	const out = [...cards];
+	for (let i = out.length - 1; i > 0; i--) {
+		const j = Math.floor(rand() * (i + 1));
+		[out[i], out[j]] = [out[j]!, out[i]!];
+	}
+	return out;
 }

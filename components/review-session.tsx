@@ -33,7 +33,7 @@ type Question = {
 	box: number;
 	reviews: number;
 };
-type Topic = { id: string; title: string; total: number; due: number };
+type Topic = { id: string; title: string; total: number; due: number; related: string[] };
 type Held = { id: string; chatTitle: string; questionText: string; verdict: string; reason?: string };
 type Status = {
 	due: number;
@@ -52,8 +52,10 @@ type Status = {
 type Result = { correct: boolean; correctIndices: number[]; explanation?: string; notes: Record<string, string>; nextDueAt: string };
 
 const TOPIC_KEY = "lh:review-topic";
+const MIX_KEY = "lh:review-mix";
 
-const statusUrl = (topic: string) => (topic ? `/api/reviews?topic=${encodeURIComponent(topic)}` : "/api/reviews");
+const statusUrl = (topic: string, mix: boolean) =>
+	topic ? `/api/reviews?topic=${encodeURIComponent(topic)}${mix ? "&mix=1" : ""}` : "/api/reviews";
 
 /** A fresh order per review: position never becomes the memory. */
 function shuffled<T>(list: T[], seed: string): T[] {
@@ -79,17 +81,22 @@ export function ReviewSession() {
 	const [i, setI] = useState(0);
 	const [done, setDone] = useState({ right: 0, total: 0 });
 	const [topic, setTopic] = useState<string | null>(null);
+	/** Mix the topics related to the picked one into its round. */
+	const [mix, setMix] = useState(false);
+	const mixRef = useRef(false);
+	mixRef.current = mix;
 	const [showHeld, setShowHeld] = useState(false);
 	const answering = useRef(false);
 
 	useEffect(() => {
+		setMix(window.localStorage.getItem(MIX_KEY) === "1");
 		setTopic(window.localStorage.getItem(TOPIC_KEY) ?? "");
 	}, []);
 
 	/** A new round: the queue restarts from the top. */
 	const load = useCallback(async (t: string) => {
 		try {
-			const res = await fetch(statusUrl(t), { cache: "no-store" });
+			const res = await fetch(statusUrl(t, mixRef.current), { cache: "no-store" });
 			setStatus((await res.json()) as Status);
 			setI(0);
 			setError(null);
@@ -99,13 +106,13 @@ export function ReviewSession() {
 	}, []);
 	useEffect(() => {
 		if (topic !== null) void load(topic);
-	}, [topic, load]);
+	}, [topic, mix, load]);
 
 	/** Counts, topics, checks and calibration; the round in progress keeps its queue. */
 	const refreshCounts = useCallback(async () => {
 		if (topic === null) return;
 		try {
-			const fresh = (await (await fetch(statusUrl(topic), { cache: "no-store" })).json()) as Status;
+			const fresh = (await (await fetch(statusUrl(topic, mixRef.current), { cache: "no-store" })).json()) as Status;
 			setStatus((s) => {
 				// Nothing queued yet (cards still being checked): newly
 				// checked cards start a round right away.
@@ -127,7 +134,15 @@ export function ReviewSession() {
 		setTopic(t);
 	};
 
+	const pickMix = (on: boolean) => {
+		window.localStorage.setItem(MIX_KEY, on ? "1" : "0");
+		setDone({ right: 0, total: 0 });
+		setMix(on);
+	};
+
 	const card = status?.queue[i];
+	const related = (topic && status?.topics.find((t) => t.id === topic)?.related) || [];
+	const relatedTitles = related.map((id) => status?.topics.find((t) => t.id === id)?.title).filter(Boolean);
 	const streak = status ? streakDays(status.activity, new Date(), new Date().getTimezoneOffset()) : 0;
 	const allDue = status?.topics.reduce((n, t) => n + t.due, 0) ?? 0;
 	const limitHit = !!status && status.settings.maxPerDay > 0 && status.due === 0 && status.dueAll > 0;
@@ -148,19 +163,34 @@ export function ReviewSession() {
 			<div className="min-h-0 flex-1 overflow-y-auto">
 				<div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
 					{status && (status.topics.length > 1 || !!topic) && (
-						<PillSelect
-							value={topic ?? ""}
-							onChange={pickTopic}
-							ariaLabel="Topic"
-							testid="review-topic"
-							className="w-full"
-							menuWidth="w-[min(42rem,calc(100vw-2rem))]"
-							options={[
-								{ value: "", label: "All topics", hint: allDue ? `${allDue} due` : undefined },
-								...(topic && !status.topics.some((t) => t.id === topic) ? [{ value: topic, label: "This topic has no cards now" }] : []),
-								...status.topics.map((t) => ({ value: t.id, label: t.title, hint: t.due ? `${t.due} due` : `${t.total} cards` })),
-							]}
-						/>
+						<div className="flex flex-col gap-2">
+							<div className="flex items-center gap-3">
+								<PillSelect
+									value={topic ?? ""}
+									onChange={pickTopic}
+									ariaLabel="Topic"
+									testid="review-topic"
+									className="min-w-0 flex-1"
+									menuWidth="w-[min(42rem,calc(100vw-2rem))]"
+									options={[
+										{ value: "", label: "All topics", hint: allDue ? `${allDue} due` : undefined },
+										...(topic && !status.topics.some((t) => t.id === topic) ? [{ value: topic, label: "This topic has no cards now" }] : []),
+										...status.topics.map((t) => ({ value: t.id, label: t.title, hint: t.due ? `${t.due} due` : `${t.total} cards` })),
+									]}
+								/>
+								{related.length > 0 && (
+									<label className="flex shrink-0 items-center gap-2 font-ui text-xs text-muted-foreground" title="Shuffle in due cards from topics in the same field">
+										<span>Mix related</span>
+										<Toggle checked={mix} label="mix related topics" onChange={pickMix} />
+									</label>
+								)}
+							</div>
+							{mix && relatedTitles.length > 0 && (
+								<p className="text-xs text-muted-foreground" data-testid="review-mix-topics">
+									Mixed with {relatedTitles.join(", ")}
+								</p>
+							)}
+						</div>
 					)}
 					{error && <p className="text-sm text-destructive">{error}</p>}
 					{!status && !error && <p className="text-sm text-muted-foreground">Loading…</p>}

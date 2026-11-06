@@ -7,12 +7,17 @@
  * A card reaches the queue only once checked "ok" (card-checker.ts): new
  * cards are checked in the background, one session at a time, on the
  * auditor role's model (the cheap slot). Nothing configured → they wait.
+ *
+ * Topics (sessions) get their field(s) the same way, once each
+ * (data/review-fields.jsonl, topic-fielder.ts): a topic can be reviewed
+ * mixed with the topics sharing a field.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { piEngineForSpec } from "../agent/models.ts";
 import { checkCards } from "../agent/subagents/card-checker.ts";
+import { fieldTopics } from "../agent/subagents/topic-fielder.ts";
 import { emit } from "../core/events.ts";
 import {
 	calibration,
@@ -21,6 +26,9 @@ import {
 	dueCards,
 	extractReviewCards,
 	isCorrect,
+	mixedOrder,
+	parseTopicFields,
+	relatedTopics,
 	parseReviewChecks,
 	parseReviewLedger,
 	REVIEW_CHECK_VERSION,
@@ -41,6 +49,7 @@ import { stores } from "./stores.ts";
 
 const LEDGER = () => path.join(PATHS.data, "reviews.jsonl");
 const CHECKS = () => path.join(PATHS.data, "review-checks.jsonl");
+const FIELDS = () => path.join(PATHS.data, "review-fields.jsonl");
 
 /** Per-chat card cache, keyed by the record's updatedAt. */
 const cache = new Map<string, { updatedAt: string; cards: ReviewCard[] }>();
@@ -74,6 +83,7 @@ const readText = (file: string) => {
 };
 const readLedger = (): ReviewEvent[] => parseReviewLedger(readText(LEDGER()));
 const readChecks = (): Map<string, ReviewCheck> => parseReviewChecks(readText(CHECKS()));
+const readFields = (): Map<string, string[]> => parseTopicFields(readText(FIELDS()));
 
 // ─── background checks ──────────────────────────────────────────────────────
 
@@ -201,6 +211,82 @@ function runChecks(
 	return run;
 }
 
+// ─── topic fields ───────────────────────────────────────────────────────────
+
+/** Topics labelled per call, and the questions shown per topic. */
+const FIELD_BATCH = 20;
+const FIELD_QUESTIONS = 5;
+
+type Fielder = typeof fieldTopics;
+let fielder: Fielder = fieldTopics;
+const fielderKey = "__lhTopicFielder";
+function fielderSlot(): CheckerSlot {
+	const g = globalThis as typeof globalThis & { [fielderKey]?: CheckerSlot };
+	return (g[fielderKey] ??= {});
+}
+
+/** Test seam: a scripted fielder replaces the model call. */
+export function setTopicFielder(fn: Fielder | null): void {
+	fielder = fn ?? fieldTopics;
+	const slot = fielderSlot();
+	slot.failedAt = undefined;
+	slot.lastError = undefined;
+}
+
+/** Label every topic with reviewable cards that has no field yet. A paired
+ *  phone leaves fresh topics to the computer, like the card checks. Never throws. */
+export function kickTopicFields(): Promise<void> {
+	const slot = fielderSlot();
+	if (slot.running) return slot.running;
+	if (slot.failedAt && Date.now() - slot.failedAt < RETRY_MS) return Promise.resolve();
+	const run = (async () => {
+		try {
+			const fields = readFields();
+			const checks = readChecks();
+			const byTopic = new Map<string, ReviewCard[]>();
+			for (const c of allCards()) {
+				if (fields.has(c.chatId) || checks.get(c.id)?.verdict !== "ok") continue;
+				byTopic.set(c.chatId, [...(byTopic.get(c.chatId) ?? []), c]);
+			}
+			const defer = deferToComputer();
+			const todo = [...byTopic].filter(([, cards]) => !defer || cards.some((c) => Date.now() - Date.parse(c.firstAnswer.at) > PHONE_DEFER_MS));
+			if (todo.length === 0) return;
+			const engine = fielder === fieldTopics ? auditorEngine() : undefined;
+			const titles = new Map(todo.map(([id, cards]) => [id, cards[0]!.chatTitle]));
+			const known = [...fields].filter(([id, f]) => f.length && titleOf(id)).map(([id, f]) => ({ title: titleOf(id)!, fields: f }));
+			for (let i = 0; i < todo.length; i += FIELD_BATCH) {
+				const batch = todo.slice(i, i + FIELD_BATCH).map(([id, cards]) => ({
+					id,
+					title: titles.get(id)!,
+					questions: cards.slice(0, FIELD_QUESTIONS).map((c) => c.questionText.replace(/\s+/g, " ").slice(0, 200)),
+				}));
+				const results = await fielder({ topics: batch, known, engine });
+				const at = new Date().toISOString();
+				const lines = results.filter((r) => r.fields.length).map((r) => JSON.stringify({ topic: r.id, fields: r.fields, at }));
+				if (lines.length) {
+					fs.mkdirSync(PATHS.data, { recursive: true });
+					fs.appendFileSync(FIELDS(), `${lines.join("\n")}\n`);
+					emit("reviews-changed", {});
+				}
+				for (const r of results) known.push({ title: titles.get(r.id) ?? r.id, fields: r.fields });
+			}
+			slot.lastError = undefined;
+			slot.failedAt = undefined;
+		} catch (err) {
+			slot.lastError = err instanceof Error ? err.message : String(err);
+			slot.failedAt = Date.now();
+		}
+	})();
+	// Cleared after it settles, as in runChecks (a run can end synchronously).
+	slot.running = run;
+	void run.then(() => {
+		if (slot.running === run) slot.running = undefined;
+	});
+	return run;
+}
+
+const titleOf = (chatId: string) => cache.get(chatId)?.cards[0]?.chatTitle;
+
 // ─── status ─────────────────────────────────────────────────────────────────
 
 /** A card as the client sees it before answering: no correct answer. */
@@ -217,8 +303,9 @@ export type ReviewQuestion = {
 	reviews: number;
 };
 
-/** One session's share of the deck (the topic picker). */
-export type ReviewTopic = { id: string; title: string; total: number; due: number };
+/** One session's share of the deck (the topic picker); `related` = the
+ *  topics sharing a field with it (what "Mix related topics" adds). */
+export type ReviewTopic = { id: string; title: string; total: number; due: number; related: string[] };
 
 export interface ReviewStatus {
 	due: number;
@@ -258,18 +345,24 @@ export function reviewCounts(now = new Date()): { due: number; total: number; se
 	return { due: Math.min(due.length, left), total: ok.length, settings };
 }
 
-export function reviewStatus(now = new Date(), opts: { topic?: string; limit?: number } = {}): ReviewStatus {
+/** `topic` narrows the deck to one session; with `mix`, the topics sharing
+ *  a field with it join, and the round comes in a mixed order. */
+export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boolean; limit?: number } = {}): ReviewStatus {
 	const { cards, checks, events, ok, due, settings, doneToday, left } = deck(now);
-	void kickReviewChecks();
+	void kickReviewChecks().then(() => kickTopicFields());
+	const fields = readFields();
 	const topics = new Map<string, ReviewTopic>();
 	for (const c of ok) {
-		const t = topics.get(c.chatId) ?? { id: c.chatId, title: c.chatTitle, total: 0, due: 0 };
+		const t = topics.get(c.chatId) ?? { id: c.chatId, title: c.chatTitle, total: 0, due: 0, related: [] };
 		t.total++;
 		topics.set(c.chatId, t);
 	}
 	for (const c of due) topics.get(c.chatId)!.due++;
-	const inTopic = <T extends { chatId: string }>(list: T[]) => (opts.topic ? list.filter((c) => c.chatId === opts.topic) : list);
-	const shownDue = inTopic(due);
+	for (const t of topics.values()) t.related = relatedTopics(t.id, fields).filter((id) => topics.has(id));
+	const scope = opts.topic ? new Set([opts.topic, ...(opts.mix ? (topics.get(opts.topic)?.related ?? []) : [])]) : null;
+	const inTopic = <T extends { chatId: string }>(list: T[]) => (scope ? list.filter((c) => scope.has(c.chatId)) : list);
+	const mixed = !!scope && scope.size > 1;
+	const shownDue = mixed ? mixedOrder(inTopic(due), `${opts.topic}:${now.toISOString().slice(0, 10)}:${doneToday}`) : inTopic(due);
 	const shownOk = inTopic(ok);
 	const okIds = new Set(shownOk.map((c) => c.id));
 	const rated = [...shownOk.map((c) => c.firstAnswer), ...events.filter((e) => okIds.has(e.card))];

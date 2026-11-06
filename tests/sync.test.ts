@@ -43,7 +43,7 @@ test("settings merge: both changed the same key → the newer side wins", () => 
 });
 
 test("synced paths: progress and settings only", () => {
-	for (const p of ["settings.json", "reviews.jsonl", "chats/chat_a.json", "jobs/job_1.json", "graph/nodes.jsonl", "graph/positions.json"]) assert.ok(isSyncedPath(p), p);
+	for (const p of ["settings.json", "reviews.jsonl", "review-checks.jsonl", "review-fields.jsonl", "chats/chat_a.json", "jobs/job_1.json", "graph/nodes.jsonl", "graph/positions.json"]) assert.ok(isSyncedPath(p), p);
 	for (const p of ["models/x/y.onnx", ".sync/state.json", "debug/a.jsonl", "chats/../auth.json", "chats/sub/a.json"]) assert.ok(!isSyncedPath(p), p);
 });
 
