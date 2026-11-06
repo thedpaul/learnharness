@@ -58,7 +58,8 @@ const quizChoiceProps = {
 			description:
 				"Revealed AFTER he answers, directly under this option: one short line on why THIS option is right, " +
 				"or which misconception makes it wrong. The card shuffles the options, so this is how your comments " +
-				"follow the order he sees — never name options by letter or position anywhere.",
+				"follow the order he sees — never name options by letter or position anywhere. Formulas and symbols in " +
+				"LaTeX ($\\sqrt{d_k}$), as in the question — never Unicode math or bare subscripts.",
 		}),
 	),
 };

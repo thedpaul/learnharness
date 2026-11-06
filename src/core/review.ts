@@ -311,12 +311,14 @@ export function parseReviewLedger(text: string): ReviewEvent[] {
 
 // ─── checks ─────────────────────────────────────────────────────────────────
 
-/** Bump to re-check every card (a better checker, a new rule). */
-export const REVIEW_CHECK_VERSION = 1;
+/** Bump to re-check every card (a better checker, a new rule). An older
+ *  check keeps its card in the deck until the re-check replaces it; a
+ *  check from a newer build is ignored. v2: notes in LaTeX. */
+export const REVIEW_CHECK_VERSION = 2;
 
 export type ReviewVerdict = "ok" | "wrong" | "unclear";
 
-/** One review-checks.jsonl line; the newest current-version line per card wins. */
+/** One review-checks.jsonl line; per card the highest version wins, then the newest. */
 export interface ReviewCheck {
 	card: string;
 	at: string;
@@ -336,10 +338,11 @@ export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
 		if (!line.trim()) continue;
 		try {
 			const c = JSON.parse(line) as Partial<ReviewCheck>;
-			if (typeof c.card !== "string" || typeof c.at !== "string" || c.v !== REVIEW_CHECK_VERSION) continue;
+			if (typeof c.card !== "string" || typeof c.at !== "string") continue;
+			if (typeof c.v !== "number" || c.v < 1 || c.v > REVIEW_CHECK_VERSION) continue;
 			if (c.verdict !== "ok" && c.verdict !== "wrong" && c.verdict !== "unclear") continue;
 			const prev = out.get(c.card);
-			if (prev && prev.at > c.at) continue;
+			if (prev && (prev.v > c.v || (prev.v === c.v && prev.at > c.at))) continue;
 			out.set(c.card, {
 				card: c.card,
 				at: c.at,
@@ -354,6 +357,11 @@ export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
 		}
 	}
 	return out;
+}
+
+/** A check made by an older checker: still valid, due for a re-check. */
+export function checkIsStale(check: ReviewCheck | undefined): boolean {
+	return !!check && check.v < REVIEW_CHECK_VERSION;
 }
 
 /** The card as reviewed: the check's context, and per-option notes (the
