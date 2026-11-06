@@ -15,6 +15,7 @@ import { ToolContentResponse } from "@/components/ai-elements/message";
 import { playCue } from "@/components/sound-cues";
 import { TopBar } from "@/components/top-bar";
 import { GlyphMark } from "@/components/ui/glyph-mark";
+import { PillSelect } from "@/components/ui/pill-select";
 import { cn } from "@/lib/utils";
 import { useServerEvent } from "@/components/server-events";
 import { CONFIDENCE_STOPS, DEFAULT_CONFIDENCE_INDEX, seededRandom, streakDays, type Calibration } from "@/src/core";
@@ -141,21 +142,19 @@ export function ReviewSession() {
 			<div className="min-h-0 flex-1 overflow-y-auto">
 				<div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
 					{status && (status.topics.length > 1 || !!topic) && (
-						<select
+						<PillSelect
 							value={topic ?? ""}
-							onChange={(e) => pickTopic(e.target.value)}
-							aria-label="Topic"
-							data-testid="review-topic"
-							className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 font-ui text-sm text-foreground outline-none"
-						>
-							<option value="">All topics{allDue ? ` · ${allDue} due` : ""}</option>
-							{topic && !status.topics.some((t) => t.id === topic) && <option value={topic}>This topic has no cards now</option>}
-							{status.topics.map((t) => (
-								<option key={t.id} value={t.id}>
-									{t.title} · {t.due ? `${t.due} due` : `${t.total} cards`}
-								</option>
-							))}
-						</select>
+							onChange={pickTopic}
+							ariaLabel="Topic"
+							testid="review-topic"
+							className="w-full"
+							menuWidth="w-[min(42rem,calc(100vw-2rem))]"
+							options={[
+								{ value: "", label: "All topics", hint: allDue ? `${allDue} due` : undefined },
+								...(topic && !status.topics.some((t) => t.id === topic) ? [{ value: topic, label: "This topic has no cards now" }] : []),
+								...status.topics.map((t) => ({ value: t.id, label: t.title, hint: t.due ? `${t.due} due` : `${t.total} cards` })),
+							]}
+						/>
 					)}
 					{error && <p className="text-sm text-destructive">{error}</p>}
 					{!status && !error && <p className="text-sm text-muted-foreground">Loading…</p>}
@@ -296,23 +295,19 @@ function ResetReviews({ topicTitle, onReset }: { topicTitle?: string; onReset: (
 				Your session answers stay.
 			</p>
 			<div className="flex flex-wrap items-center gap-2">
-				<select
-					value={span}
-					onChange={(e) => {
-						setSpan(Number(e.target.value));
+				<PillSelect
+					value={String(span)}
+					onChange={(next) => {
+						setSpan(Number(next));
 						setConfirming(false);
 						setMessage(null);
 					}}
-					aria-label="Reset period"
-					data-testid="review-reset-span"
-					className="h-8 min-w-0 rounded-md border border-border bg-background px-2 font-ui text-sm text-foreground outline-none"
-				>
-					{RESET_SPANS.map((s, n) => (
-						<option key={s.label} value={n}>
-							{s.label[0]!.toUpperCase() + s.label.slice(1)}
-						</option>
-					))}
-				</select>
+					ariaLabel="Reset period"
+					testid="review-reset-span"
+					className="w-44"
+					menuWidth="w-44"
+					options={RESET_SPANS.map((s, n) => ({ value: String(n), label: s.label[0]!.toUpperCase() + s.label.slice(1) }))}
+				/>
 				{confirming ? (
 					<>
 						<button
@@ -320,11 +315,11 @@ function ResetReviews({ topicTitle, onReset }: { topicTitle?: string; onReset: (
 							disabled={busy}
 							onClick={() => void run()}
 							data-testid="review-reset-confirm"
-							className="h-8 rounded-md bg-destructive px-3 font-ui text-sm text-white disabled:opacity-60"
+							className="rounded-full bg-destructive px-3 py-1 font-ui text-sm text-white shadow-lg disabled:opacity-60"
 						>
 							Reset {pick.label}
 						</button>
-						<button type="button" disabled={busy} onClick={() => setConfirming(false)} className="h-8 px-2 font-ui text-sm hover:text-foreground">
+						<button type="button" disabled={busy} onClick={() => setConfirming(false)} className="rounded-full px-2 py-1 font-ui text-sm hover:text-foreground">
 							Cancel
 						</button>
 					</>
@@ -336,7 +331,7 @@ function ResetReviews({ topicTitle, onReset }: { topicTitle?: string; onReset: (
 							setMessage(null);
 						}}
 						data-testid="review-reset-start"
-						className="h-8 rounded-md border border-border px-3 font-ui text-sm text-foreground hover:bg-muted"
+						className="rounded-full border bg-card/85 px-3 py-1 font-ui text-sm text-card-foreground shadow-lg backdrop-blur transition-colors hover:bg-muted"
 					>
 						Reset…
 					</button>
