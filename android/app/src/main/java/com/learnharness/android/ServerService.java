@@ -174,6 +174,10 @@ public final class ServerService extends Service {
 		env.put("PORT", String.valueOf(port));
 		env.put("HOSTNAME", "127.0.0.1");
 		env.put("LH_DATA_DIR", new File(getFilesDir(), "data").getPath());
+		// Phone sync: this side pairs with a computer, and shows the hub its name.
+		env.put("LH_PLATFORM", "android");
+		String deviceName = android.provider.Settings.Global.getString(getContentResolver(), "device_name");
+		env.put("LH_DEVICE_NAME", deviceName != null && !deviceName.isEmpty() ? deviceName : android.os.Build.MODEL);
 		env.put("LH_AUTH_FILE", new File(getFilesDir(), "auth.json").getPath());
 		env.put("LH_ANDROID_API_SECRET", hex.toString());
 		// The bundled Claude Code CLI (Linux musl build) and the musl loader that runs it.
