@@ -51,13 +51,14 @@ import { Hint } from "@/components/ui/hint";
 import { AppearanceSection, GraphSection } from "./appearance-section.tsx";
 import { KeyboardSection } from "./keyboard-section.tsx";
 import { SyncSection } from "./sync-section.tsx";
+import { SYNC_ENABLED } from "@/src/core";
 import { ChatGPTUIProvider } from "./chatgpt-connection.tsx";
 import { NativeSubscriptionUIProvider } from "./subscription-connections.tsx";
 
 /** Owner (2026-09-20): hints earn their place — mechanics-explaining
  *  prose is out; only the keyboard note stays (storage location is a
  *  real question users ask). */
-const SECTIONS = [
+const ALL_SECTIONS = [
 	{ id: "keys", label: "Providers" },
 	{ id: "agent", label: "Agent" },
 	{ id: "appearance", label: "Appearance" },
@@ -66,7 +67,9 @@ const SECTIONS = [
 	{ id: "sync", label: "Sync" },
 	{ id: "general", label: "General" },
 ] as const;
-type SectionId = (typeof SECTIONS)[number]["id"];
+type SectionId = (typeof ALL_SECTIONS)[number]["id"];
+// Sync is hidden while switched off (src/core/sync-flag.ts).
+const SECTIONS = ALL_SECTIONS.filter((s) => s.id !== "sync" || SYNC_ENABLED);
 
 /** `open(section?, row?)` — the optional ROW deep-links into the Keys
  *  section with that row unfolded (zero-keys wave: the dictation error's
@@ -426,7 +429,7 @@ export function SettingsDialogBody({
 									/>
 								</SettingsSection>
 							)}
-							{active === "sync" && (
+							{SYNC_ENABLED && active === "sync" && (
 								<SettingsSection title="Sync" testid="section-sync">
 									<SyncSection />
 								</SettingsSection>

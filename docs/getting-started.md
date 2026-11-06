@@ -56,6 +56,8 @@ For lessons, attach material to a session instead. Use the graph's **Extract fil
 
 The graph stores propositions and reasoning chains with source provenance, **not mastery scores**. A proposition's presence is not proof that you understood or retained it. Automatic session extraction can be disabled independently of graph rendering.
 
+<!-- Sync is switched off for now (src/core/sync-flag.ts); restore this section with it.
+
 ## Sync across devices
 
 **Settings → Sync** keeps your sessions, knowledge graph, finished background jobs and settings the same on every device, through a private LearnHarness folder in your Google Drive (the `drive.appdata` space, which nothing else in your Drive can see).
@@ -68,6 +70,7 @@ With automatic sync on, the app syncs when it opens, every minute while it's ope
 - A session changed on both devices since the last sync: the newer copy wins, and the other is kept in `data/.sync/conflicts/`.
 - Settings merge key by key. API keys, the dictation engine, Claude Code, the custom provider and file-access folders stay per device.
 - Background jobs sync once they finish, so another device never re-runs one.
+-->
 
 ## Data, privacy, and usage
 
