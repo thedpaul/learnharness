@@ -34,6 +34,7 @@ import {
   type PluginConfig,
 } from "streamdown";
 import { mdComponents } from "@/components/md-blocks";
+import { withMathGlue } from "@/components/math-punctuation";
 import { repairMathForDisplay, transformMathDelimiters } from "@/src/core";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
@@ -346,13 +347,20 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 // `code` override intercepts mermaid fences and renders via
 // components/mermaid-render.ts — streamdown's internal mermaid machinery
 // (the plugin entry + the `mermaid` prop) is retired with it.
+/** The math plugin, its KaTeX step followed by the punctuation glue
+ *  (math-punctuation.ts): no period left alone after a formula. */
+function mathWithGlue() {
+  const math = createMathPlugin({ singleDollarTextMath: true });
+  return { ...math, rehypePlugin: withMathGlue(math.rehypePlugin) };
+}
+
 export const streamdownPlugins = {
   cjk: {
     ...cjk,
     remarkPluginsAfter: [...cjk.remarkPluginsAfter, remarkBreaks],
   },
   code,
-  math: createMathPlugin({ singleDollarTextMath: true }),
+  math: mathWithGlue(),
 } as unknown as PluginConfig;
 
 // Remend's incomplete-HTML heuristic mistakes `<b` in `$a<b$` for a

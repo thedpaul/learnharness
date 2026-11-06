@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MessageResponse } from "../components/ai-elements/message.tsx";
+
+const render = (md: string) => renderToStaticMarkup(React.createElement(MessageResponse, { mode: "static" }, md));
+
+test("math glue: punctuation after (and an opening bracket before) inline math stays with it", () => {
+	const html = render("Model C: one dense FFN with $h = 8192$. Then ($x$), done.");
+	assert.equal((html.match(/class="lh-math-glue"/g) ?? []).length, 2);
+	assert.match(html, /lh-math-glue">[\s\S]*8192[\s\S]*<\/span>\.<\/span>/, "the period is inside the glue span");
+	assert.match(html, /lh-math-glue">\([\s\S]*<\/span>\),<\/span>/, "( before and ), after");
+	assert.match(html, /<\/span> Then /, "the text after the period is untouched");
+});
+
+test("math glue: math with spaces around it, and display math, are left alone", () => {
+	assert.doesNotMatch(render("so $a$ and $b$ are"), /lh-math-glue/);
+	assert.doesNotMatch(render("$$\nx = 1\n$$\n\n."), /lh-math-glue/);
+});
