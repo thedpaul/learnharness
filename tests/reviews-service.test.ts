@@ -86,5 +86,15 @@ test("reviews: only checked-ok cards queue, by topic; answers update the counts"
 	assert.deepEqual(resetReviews(30, {}, new Date(Date.now() + 40 * 86_400_000)), { removed: 0 }, "older than the period: kept");
 	assert.deepEqual(resetReviews(null), { removed: 1 });
 	assert.equal(reviewCounts().due, 2);
+
+	// The daily limit: one review a day, one done → nothing more today.
+	const record = stores.settingsStore.readSettings() ?? { version: 1 };
+	stores.settingsStore.writeSettings({ ...record, reviews: { maxPerDay: 1 } } as never);
+	assert.equal(reviewCounts().due, 1);
+	recordReview(q1.id, [1], 70);
+	assert.equal(reviewCounts().due, 0);
+	const limited = reviewStatus();
+	assert.deepEqual([limited.due, limited.dueAll, limited.doneToday, limited.queue.length], [0, 1, 1, 0]);
+	stores.settingsStore.writeSettings(record as never);
 	setReviewChecker(null);
 });

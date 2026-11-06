@@ -23,11 +23,14 @@ import {
 	parseReviewChecks,
 	parseReviewLedger,
 	REVIEW_CHECK_VERSION,
+	reviewSettingsOf,
+	reviewsToday,
 	scheduleCard,
 	type Calibration,
 	type ReviewCard,
 	type ReviewCheck,
 	type ReviewEvent,
+	type ReviewSettings,
 } from "../core/index.ts";
 import { resolveRoleSpec } from "../core/settings-resolution.ts";
 import { providerKeyPresent } from "./keys.ts";
@@ -214,6 +217,10 @@ export interface ReviewStatus {
 	held: { id: string; chatTitle: string; questionText: string; verdict: string; reason?: string }[];
 	topics: ReviewTopic[];
 	queue: ReviewQuestion[];
+	/** Due in total, before the daily limit (`due` is what the limit allows now). */
+	dueAll: number;
+	doneToday: number;
+	settings: ReviewSettings;
 	calibration: Calibration;
 	/** Every answer time (sessions + reviews), for the client's local-day streak. */
 	activity: string[];
@@ -224,19 +231,23 @@ function deck(now: Date) {
 	const checks = readChecks();
 	const events = readLedger();
 	const ok = cards.filter((c) => checks.get(c.id)?.verdict === "ok").map((c) => checkedCard(c, checks.get(c.id)));
-	return { cards, checks, events, ok, due: dueCards(ok, events, now) };
+	const settings = reviewSettingsOf(stores.settingsStore.readSettings());
+	const doneToday = reviewsToday(events, now);
+	/** What the daily limit still allows today (Infinity = no limit). */
+	const left = settings.maxPerDay > 0 ? Math.max(0, settings.maxPerDay - doneToday) : Infinity;
+	return { cards, checks, events, ok, due: dueCards(ok, events, now), settings, doneToday, left };
 }
 
-/** The sidebar and home badges: the count only. */
-export function reviewCounts(now = new Date()): { due: number; total: number } {
-	const { ok, due } = deck(now);
+/** The sidebar and home badges: what can be reviewed now (the daily limit applied). */
+export function reviewCounts(now = new Date()): { due: number; total: number; settings: ReviewSettings } {
+	const { ok, due, left, settings } = deck(now);
 	void kickReviewChecks();
 	startupRecheck?.();
-	return { due: due.length, total: ok.length };
+	return { due: Math.min(due.length, left), total: ok.length, settings };
 }
 
 export function reviewStatus(now = new Date(), opts: { topic?: string; limit?: number } = {}): ReviewStatus {
-	const { cards, checks, events, ok, due } = deck(now);
+	const { cards, checks, events, ok, due, settings, doneToday, left } = deck(now);
 	void kickReviewChecks();
 	const topics = new Map<string, ReviewTopic>();
 	for (const c of ok) {
@@ -250,8 +261,12 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; limit?: n
 	const shownOk = inTopic(ok);
 	const okIds = new Set(shownOk.map((c) => c.id));
 	const rated = [...shownOk.map((c) => c.firstAnswer), ...events.filter((e) => okIds.has(e.card))];
+	const allowed = shownDue.slice(0, Math.min(left, opts.limit ?? 20));
 	return {
-		due: shownDue.length,
+		due: Math.min(shownDue.length, left),
+		dueAll: shownDue.length,
+		doneToday,
+		settings,
 		total: shownOk.length,
 		pending: cards.filter((c) => !checks.has(c.id)).length,
 		checkError: checkerSlot().lastError ?? null,
@@ -259,7 +274,7 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; limit?: n
 			.filter((c) => checks.has(c.id) && checks.get(c.id)!.verdict !== "ok")
 			.map((c) => ({ id: c.id, chatTitle: c.chatTitle, questionText: c.questionText, verdict: checks.get(c.id)!.verdict, reason: checks.get(c.id)!.reason })),
 		topics: [...topics.values()].sort((a, b) => b.due - a.due || b.total - a.total || a.title.localeCompare(b.title)),
-		queue: shownDue.slice(0, opts.limit ?? 20).map((c) => ({
+		queue: allowed.map((c) => ({
 			id: c.id,
 			chatId: c.chatId,
 			chatTitle: c.chatTitle,

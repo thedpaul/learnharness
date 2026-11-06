@@ -32,6 +32,7 @@ import { WRITABLE_TOOL_KEYS } from "../core/pending.ts";
 import { isSearchEngineId, SEARCH_ENGINES } from "../core/search.ts";
 import { isDictationEngine, isDictationLanguage, isTranscriptionEndpointUrl, isWhisperModel } from "../core/dictation.ts";
 import { parseFileAccessSettings } from "../core/file-access.ts";
+import { parseReviewSettings, type ReviewSettings } from "../core/review.ts";
 
 /** Parsed-or-rejected — `ok: false` carries the 400's error message. */
 export type SettingsBodyResult<T> =
@@ -482,6 +483,14 @@ export function parseCustomModelOverridesBody(
 
 /** The section→parser map for PUT /api/settings/[section]. The custom endpoint
  *  is NOT a section — it connects via POST /api/custom-provider. */
+/** reviews: { maxPerDay?, schedule?: {days, time} | null, notify? } (core/review.ts). */
+export function parseReviewsSettingsBody(body: unknown): SettingsBodyResult<ReviewSettings> {
+	const parsed = parseReviewSettings(body);
+	return parsed
+		? { ok: true, settings: parsed }
+		: { ok: false, error: "reviews must be { maxPerDay: 0-1000, schedule: { days: 0-6[], time: \"HH:MM\" } | null, notify: boolean, pausedUntil: ISO time | null }" };
+}
+
 export const SETTINGS_SECTIONS = {
 	general: parseGeneralSettingsBody,
 	chat: parseSettingsBody,
@@ -492,6 +501,7 @@ export const SETTINGS_SECTIONS = {
 	models: parseModelsSettingsBody,
 	dictation: parseDictationSettingsBody,
 	claudeCode: parseClaudeCodeSettingsBody,
+	reviews: parseReviewsSettingsBody,
 } as const;
 
 export type SettingsSectionName = keyof typeof SETTINGS_SECTIONS;

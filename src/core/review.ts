@@ -148,6 +148,87 @@ export function dueCards(cards: readonly ReviewCard[], events: readonly ReviewEv
 		.sort((a, b) => a.schedule.dueAt.localeCompare(b.schedule.dueAt));
 }
 
+// ─── settings: daily limit, schedule ────────────────────────────────────────
+
+/** settings.json → reviews (PUT /api/settings/reviews). */
+export interface ReviewSettings {
+	/** New reviews a day; 0 = no limit. */
+	maxPerDay: number;
+	/** When to remind: local weekdays (0 = Sunday) at "HH:MM". */
+	schedule: { days: number[]; time: string } | null;
+	/** Remind at the scheduled times when something is due. */
+	notify: boolean;
+	/** Reminders paused until this ISO time (null = not paused). */
+	pausedUntil: string | null;
+}
+
+export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = { maxPerDay: 0, schedule: null, notify: false, pausedUntil: null };
+
+/** Whether reminders are paused at `now`. */
+export const remindersPaused = (s: ReviewSettings, now: Date): boolean => !!s.pausedUntil && Date.parse(s.pausedUntil) > now.getTime();
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The stored section, or null when malformed (the parser's 400). */
+export function parseReviewSettings(raw: unknown): ReviewSettings | null {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const r = raw as Record<string, unknown>;
+	const out: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS };
+	if (r.maxPerDay !== undefined) {
+		if (typeof r.maxPerDay !== "number" || !Number.isInteger(r.maxPerDay) || r.maxPerDay < 0 || r.maxPerDay > 1000) return null;
+		out.maxPerDay = r.maxPerDay;
+	}
+	if (r.schedule !== undefined && r.schedule !== null) {
+		const sc = r.schedule as { days?: unknown; time?: unknown };
+		if (typeof sc !== "object" || !Array.isArray(sc.days) || typeof sc.time !== "string" || !TIME_RE.test(sc.time)) return null;
+		const days = [...new Set(sc.days)];
+		if (!days.every((d): d is number => typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 6)) return null;
+		out.schedule = { days: days.sort(), time: sc.time };
+	}
+	if (r.notify !== undefined) {
+		if (typeof r.notify !== "boolean") return null;
+		out.notify = r.notify;
+	}
+	if (r.pausedUntil !== undefined && r.pausedUntil !== null) {
+		if (typeof r.pausedUntil !== "string" || Number.isNaN(Date.parse(r.pausedUntil))) return null;
+		out.pausedUntil = new Date(r.pausedUntil).toISOString();
+	}
+	return out;
+}
+
+/** The settings as stored, defaults for anything missing or malformed. */
+export function reviewSettingsOf(record: object | null | undefined): ReviewSettings {
+	return parseReviewSettings((record as { reviews?: unknown } | null | undefined)?.reviews ?? {}) ?? DEFAULT_REVIEW_SETTINGS;
+}
+
+/** The next scheduled time strictly after `after`, in the runtime's local time. */
+export function nextReviewTime(schedule: ReviewSettings["schedule"], after: Date): Date | null {
+	if (!schedule || schedule.days.length === 0) return null;
+	const [h, m] = schedule.time.split(":").map(Number) as [number, number];
+	for (let i = 0; i <= 7; i++) {
+		const d = new Date(after.getFullYear(), after.getMonth(), after.getDate() + i, h, m, 0, 0);
+		if (schedule.days.includes(d.getDay()) && d.getTime() > after.getTime()) return d;
+	}
+	return null;
+}
+
+/** The most recent scheduled time at or before `now` (the slot a reminder belongs to). */
+export function lastReviewTime(schedule: ReviewSettings["schedule"], now: Date): Date | null {
+	if (!schedule || schedule.days.length === 0) return null;
+	const [h, m] = schedule.time.split(":").map(Number) as [number, number];
+	for (let i = 0; i <= 7; i++) {
+		const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, h, m, 0, 0);
+		if (schedule.days.includes(d.getDay()) && d.getTime() <= now.getTime()) return d;
+	}
+	return null;
+}
+
+/** Reviews done since local midnight (the daily limit's count). */
+export function reviewsToday(events: readonly ReviewEvent[], now: Date): number {
+	const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+	return events.filter((e) => Date.parse(e.at) >= midnight && Date.parse(e.at) <= now.getTime()).length;
+}
+
 // ─── calibration ────────────────────────────────────────────────────────────
 
 export interface CalibrationBin {
