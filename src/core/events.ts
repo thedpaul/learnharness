@@ -55,6 +55,9 @@ export interface ServerEvents {
 	/** Spaced reviews changed (an answer, a card check, a sync): due
 	 *  counts refetch. */
 	"reviews-changed": Record<string, never>;
+	/** The fact recheck moved (src/server/fact-check.ts): its status
+	 *  refetches; a finished run may have corrected graph statements. */
+	"recheck-changed": Record<string, never>;
 }
 
 export type ServerEventType = keyof ServerEvents;
@@ -73,6 +76,7 @@ export const SERVER_EVENT_TYPES = [
 	"record-changed",
 	"compaction-changed",
 	"reviews-changed",
+	"recheck-changed",
 ] as const satisfies readonly ServerEventType[];
 
 /** One notification: the type discriminates the payload. */

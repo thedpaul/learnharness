@@ -460,6 +460,11 @@ export interface GraphSettings {
 	 *  delays extraction — the user's stated cost/thoroughness tradeoff,
 	 *  not a misconfiguration to police. */
 	extractionChunkTokens?: number;
+	/** FACT RECHECK ON STARTUP (src/server/fact-check.ts): when the server
+	 *  starts, re-verify graph propositions and review cards whose last
+	 *  check is older than the recheck window, correcting false graph
+	 *  statements. Model calls on the cheap slot — default off. */
+	recheckOnStartup?: boolean;
 }
 
 /**
@@ -536,7 +541,7 @@ export const FACTORY_SETTINGS: FactorySettings = {
 		sessionNameSerif: true,
 		mdRendering: { headingWeight: 900, boldColor: null, italicColor: null },
 	},
-	graph: { enabled: true, rendering: true, extractionChunkTokens: 4096 },
+	graph: { enabled: true, rendering: true, extractionChunkTokens: 4096, recheckOnStartup: false },
 	compaction: { thresholdTokens: 150_000 },
 };
 
@@ -795,6 +800,8 @@ function sanitizeGraph(raw: Record<string, unknown>): GraphSettings {
 	if (enabled !== undefined) out.enabled = enabled;
 	const rendering = boolOrDrop(raw.rendering);
 	if (rendering !== undefined) out.rendering = rendering;
+	const recheck = boolOrDrop(raw.recheckOnStartup);
+	if (recheck !== undefined) out.recheckOnStartup = recheck;
 	const rawTokens = raw.extractionChunkTokens;
 	if (typeof rawTokens === "number" && Number.isFinite(rawTokens) && rawTokens > 0) {
 		out.extractionChunkTokens = Math.max(EXTRACTION_CHUNK_TOKENS_FLOOR, Math.floor(rawTokens));

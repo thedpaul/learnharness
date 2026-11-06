@@ -83,11 +83,17 @@ export async function checkCards(opts: {
 	cards: CardToCheck[];
 	sessionTitle: string;
 	engine: PiEngine | undefined;
+	/** Facts from this lesson the fact check corrected (src/server/fact-check.ts):
+	 *  a card built on the old version is now wrong. */
+	corrections?: string[];
 	signal?: AbortSignal;
 	onStep?: (usage: Usage, model: string) => void;
 }): Promise<CardCheckResult[]> {
 	const ids = new Set(opts.cards.map((c) => c.id));
-	const prompt = `Lesson: ${opts.sessionTitle}\n\n${opts.cards.map(cardBlock).join("\n\n---\n\n")}`;
+	const fixes = opts.corrections?.length
+		? `## Corrected since the lesson\nThe lesson taught some of these wrongly; trust these versions:\n${opts.corrections.map((c) => `- ${c}`).join("\n")}\n\n---\n\n`
+		: "";
+	const prompt = `Lesson: ${opts.sessionTitle}\n\n${fixes}${opts.cards.map(cardBlock).join("\n\n---\n\n")}`;
 	const value = await runSubmitAgent<Static<typeof checkSchema>>({
 		role: "auditor",
 		toolName: "submit_checks",
