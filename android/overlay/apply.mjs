@@ -483,3 +483,26 @@ html.lh-android header button.font-title.lh-marquee > .lh-title-text {
 html.lh-android input[aria-label="Session title"] { font-size: 1.25rem; line-height: 1.75rem; max-width: 100%; min-width: 0; flex: 1 1 auto; field-sizing: fixed; }
 `);
 console.log("[overlay] app/globals.css (title marquee, floating rename)");
+
+// Opening a long session: render the latest messages first and fill in the
+// older history afterwards (overlay/files/components/android-message-window.ts).
+edit("components/chat.tsx", [[
+	`import { ReadingThinkingField } from "@/components/reading-thinking";`,
+	`import { ReadingThinkingField } from "@/components/reading-thinking";
+import { useAndroidMessageWindow } from "@/components/android-message-window";`,
+], [
+	`	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);`,
+	`	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);
+	const lhWindow = useAndroidMessageWindow(chatId, messages);`,
+], [
+	`							{messages.map((m, mi) =>
+								m.role === "user" && isSubagentSteer(m) ? (`,
+	`							{messages.map((m, mi) =>
+								!lhWindow.showMessage(mi) ? null : m.role === "user" && isSubagentSteer(m) ? (`,
+], [
+	`											{m.parts.map((part, pi) => {
+												const isLastPart = mi === messages.length - 1 && pi === m.parts.length - 1;`,
+	`											{m.parts.map((part, pi) => {
+												if (!lhWindow.showPart(mi, pi)) return null;
+												const isLastPart = mi === messages.length - 1 && pi === m.parts.length - 1;`,
+]]);
