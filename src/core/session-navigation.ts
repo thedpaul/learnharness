@@ -7,9 +7,15 @@ export function messageAnchorId(messageId: string): string {
 	return `message-${messageId}`;
 }
 
+/** Android WebView can hand back the fragment twice ("#message-x#message-x",
+ *  the second "#" arriving as %23), which used to read as no anchor at all and
+ *  left the session at the bottom. An exact repeat collapses to one; IDs may
+ *  themselves contain "#", so nothing else is split. */
 export function messageIdFromHash(hash: string): string | null {
 	try {
-		const anchor = decodeURIComponent(hash.replace(/^#/, ""));
+		let anchor = decodeURIComponent(hash.replace(/^#/, ""));
+		const half = (anchor.length - 1) / 2;
+		if (Number.isInteger(half) && anchor[half] === "#" && anchor.slice(0, half) === anchor.slice(half + 1)) anchor = anchor.slice(0, half);
 		return anchor.startsWith("message-") && anchor.length > "message-".length
 			? anchor.slice("message-".length)
 			: null;

@@ -37,6 +37,9 @@ describe("proposition source-session links (owner, 2026-10-13)", () => {
 	it("recognizes only non-empty, well-formed message hashes", () => {
 		assert.equal(messageAnchorId("msg_a"), "message-msg_a");
 		assert.equal(messageIdFromHash("#message-msg_a"), "msg_a");
+		assert.equal(messageIdFromHash("#message-q-toolu_1%23message-q-toolu_1"), "q-toolu_1");
+		assert.equal(messageIdFromHash("#message-q-toolu_1#message-q-toolu_1"), "q-toolu_1");
+		assert.equal(messageIdFromHash("#message-a%23b"), "a#b");
 		for (const hash of ["", "#", "#message-", "#other-msg_a", "#message-%ZZ"]) {
 			assert.equal(messageIdFromHash(hash), null, hash);
 		}
