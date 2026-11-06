@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
-import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { DumbbellIcon, HistoryIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, RepeatIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -51,6 +51,8 @@ const STORAGE_KEY = "lh:sidebar-open";
 import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
 import type { UpdateState } from "@/components/settings/update-settings.tsx";
 import { FilePathDropZone } from "@/components/file-path-drop-zone";
+import { useReviewsDue } from "@/components/reviews-due";
+import { useChangeCounts } from "@/components/changes";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -405,6 +407,10 @@ function SessionsSidebar() {
 		window.localStorage.setItem(KIND_FILTER_KEY, f);
 	}, []);
 	const pathname = usePathname();
+	// Spaced reviews due (src/server/reviews.ts), live (components/reviews-due.ts).
+	const reviewsDue = useReviewsDue();
+	// Later checks' findings (src/server/changes.ts): "!" while any is unseen.
+	const changeCounts = useChangeCounts();
 	const router = useRouter();
 	const { open: openSettings } = useSettingsDialog();
 
@@ -719,6 +725,42 @@ function SessionsSidebar() {
 						Practice
 						<span className="sr-only">create a new practice session</span>
 					</button>
+					<button
+						type="button"
+						data-testid="open-reviews"
+						onClick={() => router.push("/review")}
+						className={cn(
+							"flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+							pathname === "/review" && "bg-accent text-foreground",
+						)}
+					>
+						<RepeatIcon className="size-3" />
+						Reviews
+						{reviewsDue > 0 && (
+							<span data-testid="reviews-due" className="ml-auto rounded-full bg-primary/15 px-1.5 font-mono text-[0.65rem] tracking-normal text-primary">
+								{reviewsDue}
+							</span>
+						)}
+					</button>
+					{changeCounts.total > 0 && (
+						<button
+							type="button"
+							data-testid="open-changes"
+							onClick={() => router.push("/changes")}
+							className={cn(
+								"flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+								pathname === "/changes" && "bg-accent text-foreground",
+							)}
+						>
+							<HistoryIcon className="size-3" />
+							Changes
+							{changeCounts.unseen > 0 && (
+								<span data-testid="changes-unseen" className="ml-auto rounded-full bg-amber-500 px-1.5 font-mono text-[0.65rem] font-bold tracking-normal text-black">
+									! {changeCounts.unseen}
+								</span>
+							)}
+						</button>
+					)}
 				</div>
 
 				<div className="mx-3 mb-2 flex items-center gap-2">

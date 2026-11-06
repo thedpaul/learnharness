@@ -77,6 +77,7 @@ import { MenuShell } from "@/components/menu-shell.tsx";
 import { DeleteNodeDialog } from "@/components/delete-node-dialog.tsx";
 import { ChainTableOverlay } from "@/components/chain-table.tsx";
 import { Hint } from "@/components/ui/hint";
+import { FactRecheckButton, FactRecheckProgress, FactRecheckResult, useFactRecheck } from "@/components/fact-recheck";
 import {
 	ARROW_LENGTH_LADDER,
 	CHARGE_RANGE,
@@ -848,6 +849,7 @@ export function GraphChromeRow({
 	settings,
 	changeSettings,
 	onOpenChains,
+	recheck,
 }: {
 	isEmpty: boolean;
 	query: string;
@@ -863,6 +865,8 @@ export function GraphChromeRow({
 	/** Opens the chain table overlay (the chains-overlay plan,
 	 *  2026-09-29). */
 	onOpenChains: () => void;
+	/** The "Recheck facts" control (fact-recheck.tsx), before the gear. */
+	recheck?: React.ReactNode;
 }) {
 	return (
 		<>
@@ -910,6 +914,7 @@ export function GraphChromeRow({
 			{/* Import notes — its own container (36px, header band); ALWAYS
 			    rendered (the empty-graph ruling above — the entry point). */}
 			<NotesImportControl importing={importing} onImportFiles={onImportFiles} />
+			{!isEmpty && recheck}
 			{!isEmpty && (
 				// Rendering settings — own component; the gear toggles it. The
 				// gear sits at the far right (owner, round 3) so its panel drops
@@ -1078,6 +1083,8 @@ export function GraphView({
 		},
 	});
 	const { importing, onImportFiles } = notesImport;
+	// The fact recheck: a finished run may have corrected statements.
+	const factRecheck = useFactRecheck(useCallback(() => setRefreshTick((t) => t + 1), []));
 
 	// Background pipeline status: read /api/graph/status; whenever a run
 	// LEAVES the feed (finished / aborted / failed), refetch the graph.
@@ -1585,11 +1592,14 @@ export function GraphView({
 					settings={settings}
 					changeSettings={changeSettings}
 					onOpenChains={() => setChainsOpen(true)}
+					recheck={<FactRecheckButton status={factRecheck.status} onStart={factRecheck.start} />}
 				/>
 			</div>
 
 			<NotesImportErrors errors={notesImport.errors} />
 			<NotesImportNotices notices={notesImport.notices} />
+			{factRecheck.status?.running && <FactRecheckProgress status={factRecheck.status} />}
+			{factRecheck.result && <FactRecheckResult result={factRecheck.result} onDismiss={factRecheck.dismiss} />}
 			{/* Top-right tail (owner, 2026-09-20): the pipeline cost number —
 			    just a number, hover-highlighted, dropdown breakdown — then
 			    the running-pipeline pills under it. Lives BELOW the actions

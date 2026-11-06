@@ -408,8 +408,18 @@ export function getGraph(graphStore: Pick<GraphStore, "readNodes" | "readChains"
 	const byId = new Map<string, GraphNode>();
 	for (const line of graphStore.readNodes()) {
 		const existing = byId.get(line.id);
+		if (line.correction) {
+			// A fact-check fix: the corrected proposition replaces the false one.
+			if (!existing) continue;
+			const wrong = existing.statement;
+			existing.name = line.name || existing.name;
+			existing.statement = line.statement;
+			existing.aliases = existing.aliases.filter((a) => a !== wrong && a !== line.statement);
+			continue;
+		}
 		if (!existing) {
-			byId.set(line.id, { ...line, aliases: [...line.aliases], provenance: [...line.provenance] });
+			const { correction: _, ...node } = line;
+			byId.set(line.id, { ...node, aliases: [...line.aliases], provenance: [...line.provenance] });
 			continue;
 		}
 		// A later line's statement is a phrasing, not a replacement.

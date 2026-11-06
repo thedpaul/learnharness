@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CornerDownLeftIcon, DumbbellIcon } from "lucide-react";
+import { CornerDownLeftIcon, DumbbellIcon, RepeatIcon } from "lucide-react";
 import { GraphView } from "@/components/graph-view";
 import { MinimalHome } from "@/components/minimal-home";
 import { SetupDialog } from "@/components/setup-dialog";
@@ -17,6 +17,7 @@ import { PathInput } from "@/components/path-input";
 import { AttachFilesButton } from "@/components/attach-files-button";
 import { SessionStarter } from "@/components/start-session";
 import type { TurnUsage } from "@/src/core";
+import { useReviewsDue } from "@/components/reviews-due";
 
 /**
  * Home — the knowledge graph is the main view, full-bleed edge to edge
@@ -48,6 +49,8 @@ export function Home({
 	// stores slots only; the learner sends the message themselves).
 	const { catalog, configured, zeroKeys } = useModelSetup(initialConfigured);
 	const [setupOpen, setSetupOpen] = useState(false);
+	// Spaced reviews due (src/server/reviews.ts), live (components/reviews-due.ts).
+	const reviewsDue = useReviewsDue();
 	// Voice dictation (STT wave, 2026-09-17): finals append at the end of the
 	// topic draft; the strip lives in the stats bar's middle slot.
 	const dictation = useDictation({
@@ -298,6 +301,7 @@ export function Home({
 						dictationSlot={<DictationBar dictation={dictation} />}
 						turns={[] as TurnUsage[]}
 						leadingSlot={
+							<div className="flex items-center gap-1.5">
 							<div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-background p-0.5" data-testid="home-mode-switch">
 								{(["teach", "practice"] as const).map((m) => (
 									<button
@@ -316,6 +320,19 @@ export function Home({
 										{m === "teach" ? "Teach" : "Practice"}
 									</button>
 								))}
+							</div>
+							{reviewsDue > 0 && (
+								<button
+									type="button"
+									data-testid="home-reviews-due"
+									onClick={() => router.push("/review")}
+									title={`${reviewsDue} review${reviewsDue === 1 ? "" : "s"} due`}
+									className="flex items-center gap-1 rounded-md border border-primary/40 px-2 py-0.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/10"
+								>
+									<RepeatIcon aria-hidden="true" className="size-3" />
+									{reviewsDue}
+								</button>
+							)}
 							</div>
 						}
 					/>

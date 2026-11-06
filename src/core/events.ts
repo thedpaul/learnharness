@@ -52,6 +52,15 @@ export interface ServerEvents {
 	 *  the chat; the client mirrors it by disabling the composer/dock
 	 *  submit. */
 	"compaction-changed": { chatId: string; running: boolean };
+	/** Spaced reviews changed (an answer, a card check, a sync): due
+	 *  counts refetch. */
+	"reviews-changed": Record<string, never>;
+	/** The fact recheck moved (src/server/fact-check.ts): its status
+	 *  refetches; a finished run may have corrected graph statements. */
+	"recheck-changed": Record<string, never>;
+	/** The Changes list moved (src/server/changes.ts): a card flagged, a
+	 *  fact corrected, something marked seen. Badges and notes refetch. */
+	"changes-changed": Record<string, never>;
 }
 
 export type ServerEventType = keyof ServerEvents;
@@ -69,6 +78,9 @@ export const SERVER_EVENT_TYPES = [
 	"subscriptions-changed",
 	"record-changed",
 	"compaction-changed",
+	"reviews-changed",
+	"recheck-changed",
+	"changes-changed",
 ] as const satisfies readonly ServerEventType[];
 
 /** One notification: the type discriminates the payload. */

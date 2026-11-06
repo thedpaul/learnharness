@@ -8,6 +8,7 @@ import { ServerEventsProvider } from "@/components/server-events";
 import { AppearanceProvider } from "@/components/settings/appearance";
 import UpdateBanner from "@/components/update-banner";
 import { SyncAgent } from "@/components/sync-agent";
+import { ReviewReminder } from "@/components/review-reminder";
 import { TitleMarquee } from "@/components/title-marquee";
 
 // Chrome = JetBrains Mono, teaching prose = Source Sans 3, titles = CMU
@@ -34,6 +35,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 						</ActivityProvider>
 					</SidebarProvider>
 				</AppearanceProvider>
+				{/* Review reminders at the scheduled times (review-reminder.tsx). */}
+				<ReviewReminder />
 				{/* Long session titles slide through (title-marquee.tsx). */}
 				<TitleMarquee />
 			</ServerEventsProvider>
