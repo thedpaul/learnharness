@@ -55,10 +55,16 @@ type Result = { correct: boolean; correctIndices: number[]; explanation?: string
 const TOPIC_KEY = "lh:review-topic";
 const MIX_KEY = "lh:review-mix";
 const SHUFFLE_KEY = "lh:review-shuffle";
+const CLUSTER_KEY = "lh:review-cluster";
 
-/** `mix` applies to one topic (its related topics join), `shuffle` to All topics. */
-const statusUrl = (topic: string, mix: boolean, shuffle: boolean) =>
-	topic ? `/api/reviews?topic=${encodeURIComponent(topic)}${mix ? "&mix=1" : ""}` : `/api/reviews${shuffle ? "?shuffle=1" : ""}`;
+type Order = { mix: boolean; shuffle: boolean; cluster: boolean };
+
+/** `mix` applies to one topic (its related topics join), `shuffle` (and
+ *  `cluster`, inside a shuffle) to All topics. */
+const statusUrl = (topic: string, o: Order) =>
+	topic
+		? `/api/reviews?topic=${encodeURIComponent(topic)}${o.mix ? "&mix=1" : ""}`
+		: `/api/reviews${o.shuffle ? `?shuffle=1${o.cluster ? "&cluster=1" : ""}` : ""}`;
 
 /** A fresh order per review: position never becomes the memory. */
 function shuffled<T>(list: T[], seed: string): T[] {
@@ -84,27 +90,25 @@ export function ReviewSession() {
 	const [i, setI] = useState(0);
 	const [done, setDone] = useState({ right: 0, total: 0 });
 	const [topic, setTopic] = useState<string | null>(null);
-	/** Mix the topics related to the picked one into its round. */
-	const [mix, setMix] = useState(false);
-	const mixRef = useRef(false);
-	mixRef.current = mix;
-	/** All topics in one shuffled order instead of by due date. */
-	const [shuffle, setShuffle] = useState(false);
-	const shuffleRef = useRef(false);
-	shuffleRef.current = shuffle;
+	/** The round's order: mix the topics related to the picked one in; on All
+	 *  topics, shuffle (with related concepts clustered) instead of by due date. */
+	const [order, setOrder] = useState<Order>({ mix: false, shuffle: false, cluster: false });
+	const orderRef = useRef(order);
+	orderRef.current = order;
+	const { mix, shuffle, cluster } = order;
 	const [showHeld, setShowHeld] = useState(false);
 	const answering = useRef(false);
 
 	useEffect(() => {
-		setMix(window.localStorage.getItem(MIX_KEY) === "1");
-		setShuffle(window.localStorage.getItem(SHUFFLE_KEY) === "1");
+		const on = (key: string) => window.localStorage.getItem(key) === "1";
+		setOrder({ mix: on(MIX_KEY), shuffle: on(SHUFFLE_KEY), cluster: on(CLUSTER_KEY) });
 		setTopic(window.localStorage.getItem(TOPIC_KEY) ?? "");
 	}, []);
 
 	/** A new round: the queue restarts from the top. */
 	const load = useCallback(async (t: string) => {
 		try {
-			const res = await fetch(statusUrl(t, mixRef.current, shuffleRef.current), { cache: "no-store" });
+			const res = await fetch(statusUrl(t, orderRef.current), { cache: "no-store" });
 			setStatus((await res.json()) as Status);
 			setI(0);
 			setError(null);
@@ -114,13 +118,13 @@ export function ReviewSession() {
 	}, []);
 	useEffect(() => {
 		if (topic !== null) void load(topic);
-	}, [topic, mix, shuffle, load]);
+	}, [topic, order, load]);
 
 	/** Counts, topics, checks and calibration; the round in progress keeps its queue. */
 	const refreshCounts = useCallback(async () => {
 		if (topic === null) return;
 		try {
-			const fresh = (await (await fetch(statusUrl(topic, mixRef.current, shuffleRef.current), { cache: "no-store" })).json()) as Status;
+			const fresh = (await (await fetch(statusUrl(topic, orderRef.current), { cache: "no-store" })).json()) as Status;
 			setStatus((s) => {
 				// Nothing queued yet (cards still being checked): newly
 				// checked cards start a round right away.
@@ -142,15 +146,10 @@ export function ReviewSession() {
 		setTopic(t);
 	};
 
-	const pickMix = (on: boolean) => {
-		window.localStorage.setItem(MIX_KEY, on ? "1" : "0");
+	const pickOrder = (key: string, name: keyof Order) => (on: boolean) => {
+		window.localStorage.setItem(key, on ? "1" : "0");
 		setDone({ right: 0, total: 0 });
-		setMix(on);
-	};
-	const pickShuffle = (on: boolean) => {
-		window.localStorage.setItem(SHUFFLE_KEY, on ? "1" : "0");
-		setDone({ right: 0, total: 0 });
-		setShuffle(on);
+		setOrder((o) => ({ ...o, [name]: on }));
 	};
 
 	const card = status?.queue[i];
@@ -177,13 +176,13 @@ export function ReviewSession() {
 				<div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
 					{status && (status.topics.length > 1 || !!topic) && (
 						<div className="flex flex-col gap-2">
-							<div className="flex items-center gap-3">
+							<div className="flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="review-order">
 								<PillSelect
 									value={topic ?? ""}
 									onChange={pickTopic}
 									ariaLabel="Topic"
 									testid="review-topic"
-									className="min-w-0 flex-1"
+									className="min-w-48 flex-1"
 									menuWidth="w-[min(42rem,calc(100vw-2rem))]"
 									options={[
 										{ value: "", label: "All topics", hint: allDue ? `${allDue} due` : undefined },
@@ -194,13 +193,19 @@ export function ReviewSession() {
 								{related.length > 0 && (
 									<label className="flex shrink-0 items-center gap-2 font-ui text-xs text-muted-foreground" title="Shuffle in due cards from topics in the same field">
 										<span>Mix related</span>
-										<Toggle checked={mix} label="mix related topics" onChange={pickMix} />
+										<Toggle checked={mix} label="mix related topics" onChange={pickOrder(MIX_KEY, "mix")} />
 									</label>
 								)}
 								{!topic && (
 									<label className="flex shrink-0 items-center gap-2 font-ui text-xs text-muted-foreground" title="Every due card in one random order, all topics mixed">
 										<span>Shuffle</span>
-										<Toggle checked={shuffle} label="shuffle all topics" onChange={pickShuffle} />
+										<Toggle checked={shuffle} label="shuffle all topics" onChange={pickOrder(SHUFFLE_KEY, "shuffle")} />
+									</label>
+								)}
+								{!topic && shuffle && (
+									<label className="flex shrink-0 items-center gap-2 font-ui text-xs text-muted-foreground" title="Questions testing the same concept come one after another, from any topic">
+										<span>Cluster related</span>
+										<Toggle checked={cluster} label="cluster related questions" onChange={pickOrder(CLUSTER_KEY, "cluster")} />
 									</label>
 								)}
 							</div>

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, test } from "node:test";
-import { mixedOrder, parseTopicFields, relatedTopics } from "../src/core/review.ts";
+import { clusteredOrder, knownConcepts, mixedOrder, parseReviewChecks, parseTopicFields, relatedTopics, REVIEW_CHECK_VERSION } from "../src/core/review.ts";
 
 // The services read their paths at import: a scratch data dir.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lh-mix-"));
@@ -43,6 +43,45 @@ describe("related topics", () => {
 	});
 });
 
+describe("clustered order", () => {
+	const card = (id: string, chatId: string, concept?: string) => ({ id, chatId, ...(concept ? { concept } : {}) });
+	const cards = [
+		card("a1", "mdlm", "Softmax"), card("a2", "mdlm", "ELBO"), card("a3", "mdlm"),
+		card("b1", "moe", "softmax"), card("b2", "moe", "Routing"), card("b3", "moe"),
+		card("c1", "linux", "Permissions"), card("c2", "linux"),
+	];
+	const fields = new Map([["mdlm", ["Machine learning"]], ["moe", ["Machine learning"]]]);
+	/** The runs, as sets of ids in the order they come. */
+	const runs = (order: { id: string }[], groupOf: (id: string) => string) => {
+		const out: string[] = [];
+		for (const c of order) if (out.at(-1) !== groupOf(c.id)) out.push(groupOf(c.id));
+		return out;
+	};
+	const groupOf = (id: string) => ({ a1: "softmax", b1: "softmax", a2: "elbo", b2: "routing", c1: "perm", a3: "ml", b3: "ml", c2: "linux" })[id]!;
+
+	it("cards on the same concept come together across topics; ones without a concept run with their field", () => {
+		for (const seed of ["s1", "s2", "s3", "s4"]) {
+			const order = clusteredOrder(cards, fields, seed);
+			assert.deepEqual(order.map((c) => c.id).sort(), cards.map((c) => c.id).sort());
+			const r = runs(order, groupOf);
+			assert.equal(new Set(r).size, r.length, `each group is one run (${seed}: ${order.map((c) => c.id)})`);
+		}
+		assert.deepEqual(clusteredOrder(cards, fields, "x"), clusteredOrder(cards, fields, "x"));
+	});
+
+	it("the concept a check names is parsed, and the names in use are offered most-used first", () => {
+		const checks = parseReviewChecks([
+			JSON.stringify({ card: "a", at: "2030-01-01", v: REVIEW_CHECK_VERSION, verdict: "ok", concept: " Softmax " }),
+			JSON.stringify({ card: "b", at: "2030-01-01", v: REVIEW_CHECK_VERSION, verdict: "ok", concept: "softmax" }),
+			JSON.stringify({ card: "c", at: "2030-01-01", v: REVIEW_CHECK_VERSION, verdict: "ok", concept: "ELBO" }),
+			JSON.stringify({ card: "d", at: "2030-01-01", v: REVIEW_CHECK_VERSION, verdict: "ok" }),
+		].join("\n"));
+		assert.equal(checks.get("a")!.concept, "Softmax");
+		assert.equal(checks.get("d")!.concept, undefined);
+		assert.deepEqual(knownConcepts(checks.values()), ["Softmax", "ELBO"]);
+	});
+});
+
 const quiz = (id: string, q: string, answeredAt: string) => [
 	{ role: "assistant", content: [{ type: "text", text: `Teaching for ${q}` }, { type: "toolCall", id, name: "quiz", arguments: {} }] },
 	{
@@ -69,7 +108,12 @@ test("mix: a topic's round takes in the due cards of topics sharing its field, l
 	const moe = mk("MoE", 2);
 	const linux = mk("Linux", 2);
 
-	setReviewChecker(async ({ cards }) => cards.map((c) => ({ id: c.id, verdict: "ok" as const, notes: {} })));
+	const offered: string[][] = [];
+	setReviewChecker(async ({ cards, concepts }) => {
+		offered.push(concepts ?? []);
+		// Question 0 of every lesson tests the same idea.
+		return cards.map((c) => ({ id: c.id, verdict: "ok" as const, notes: {}, concept: c.questionText.includes("question 0") ? "Shared idea" : `Own ${c.id}` }));
+	});
 	await kickReviewChecks();
 	const calls: { titles: string[]; known: string[] }[] = [];
 	setTopicFielder(async ({ topics, known }) => {
@@ -98,6 +142,14 @@ test("mix: a topic's round takes in the due cards of topics sharing its field, l
 	const shuffled = reviewStatus(new Date(), { shuffle: true }).queue.map((c) => c.id);
 	assert.deepEqual([...shuffled].sort(), [...byDue].sort());
 	assert.notDeepEqual(shuffled, byDue);
+	assert.ok(offered.slice(1).every((names) => names.includes("Shared idea")), "later lessons are offered the names in use");
+
+	// Clustered: the three "Shared idea" cards (one per lesson) come one after another.
+	const clustered = reviewStatus(new Date(), { shuffle: true, cluster: true }).queue.map((c) => c.questionText);
+	assert.equal(clustered.length, byDue.length);
+	const at = clustered.map((q, i) => (q.includes("question 0") ? i : -1)).filter((i) => i >= 0);
+	assert.equal(at.length, 3);
+	assert.equal(at[2]! - at[0]!, 2, `shared concept together: ${clustered.join(" | ")}`);
 
 	// A new topic is labelled with the earlier labels shown for reuse.
 	mk("Transformers", 1);
