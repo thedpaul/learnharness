@@ -86,6 +86,7 @@ import {
 } from "@/src/core";
 import { ReadingThinkingField } from "@/components/reading-thinking";
 import { playCue } from "@/components/sound-cues";
+import { useChanges } from "@/components/changes";
 import { currentUserThinkingOpen, setAllUserThinkingOpen } from "@/components/thinking-block";
 
 /** One width for everything: transcript, cards, and the bottom blob share this column. */
@@ -247,6 +248,12 @@ export function Chat({
 	 *  only decides whether the pill rides the composer. */
 	initialConfigured?: boolean;
 }) {
+	// Later checks' findings on this session's questions (src/server/changes.ts).
+	const sessionChanges = useChanges(chatId);
+	const flagByCall = useMemo(
+		() => new Map((sessionChanges ?? []).flatMap((c) => (c.kind === "card" ? [[c.toolCallId, c] as const] : []))),
+		[sessionChanges],
+	);
 	// Reattach plumbing (background-turn runner wave): the hook holds the
 	// settled terminal's callback — a stable ref assigned below, once
 	// syncFromServer exists (refs, not closures: no stale capture).
@@ -1601,7 +1608,7 @@ export function Chat({
 														// transcript; answered ones render as graded records.
 														if (part.state === "output-available") {
 															return (
-																<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
+																<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} flag={part.toolCallId ? flagByCall.get(part.toolCallId) : undefined} />
 															);
 														}
 														return null;

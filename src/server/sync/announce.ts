@@ -13,6 +13,7 @@ export function announce(result: SyncResult): void {
 	}
 	if (changed.some((p) => p.startsWith("jobs/"))) emit("jobs-changed", {});
 	if (changed.some((p) => p.startsWith("chats/") || p.startsWith("review"))) emit("reviews-changed", {});
+	if (changed.some((p) => p.startsWith("review-checks") || p === "seen-changes.jsonl" || p === "graph/nodes.jsonl")) emit("changes-changed", {});
 	if (changed.some((p) => p.startsWith("graph/"))) {
 		emit("sources-changed", {});
 		emit("activity-changed", {});
