@@ -17,6 +17,7 @@ import { PathInput } from "@/components/path-input";
 import { AttachFilesButton } from "@/components/attach-files-button";
 import { SessionStarter } from "@/components/start-session";
 import type { TurnUsage } from "@/src/core";
+import { useReviewsDue } from "@/components/reviews-due";
 
 /**
  * Home — the knowledge graph is the main view, full-bleed edge to edge
@@ -48,18 +49,8 @@ export function Home({
 	// stores slots only; the learner sends the message themselves).
 	const { catalog, configured, zeroKeys } = useModelSetup(initialConfigured);
 	const [setupOpen, setSetupOpen] = useState(false);
-	// Spaced reviews due (src/server/reviews.ts): a quiet chip by the mode switch.
-	const [reviewsDue, setReviewsDue] = useState(0);
-	useEffect(() => {
-		let live = true;
-		fetch("/api/reviews", { cache: "no-store" })
-			.then((r) => r.json())
-			.then((j: { due?: number }) => live && setReviewsDue(j.due ?? 0))
-			.catch(() => {});
-		return () => {
-			live = false;
-		};
-	}, []);
+	// Spaced reviews due (src/server/reviews.ts), live (components/reviews-due.ts).
+	const reviewsDue = useReviewsDue();
 	// Voice dictation (STT wave, 2026-09-17): finals append at the end of the
 	// topic draft; the strip lives in the stats bar's middle slot.
 	const dictation = useDictation({

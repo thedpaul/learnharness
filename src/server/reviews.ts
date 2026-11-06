@@ -1,25 +1,40 @@
 /**
  * Spaced reviews (src/core/review.ts): the deck derives from every
- * session's graded quiz answers; reviews append to data/reviews.jsonl (a
- * ledger — synced and merged by line like the graph ledgers).
+ * session's graded quiz answers; reviews append to data/reviews.jsonl and
+ * card checks to data/review-checks.jsonl (ledgers — synced and merged by
+ * line like the graph ledgers).
+ *
+ * A card reaches the queue only once checked "ok" (card-checker.ts): new
+ * cards are checked in the background, one session at a time, on the
+ * auditor role's model (the cheap slot). Nothing configured → they wait.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config.ts";
+import { piEngineForSpec } from "../agent/models.ts";
+import { checkCards } from "../agent/subagents/card-checker.ts";
+import { emit } from "../core/events.ts";
 import {
 	calibration,
+	checkedCard,
 	dueCards,
 	extractReviewCards,
 	isCorrect,
+	parseReviewChecks,
 	parseReviewLedger,
+	REVIEW_CHECK_VERSION,
 	scheduleCard,
 	type Calibration,
 	type ReviewCard,
+	type ReviewCheck,
 	type ReviewEvent,
 } from "../core/index.ts";
+import { resolveRoleSpec } from "../core/settings-resolution.ts";
+import { providerKeyPresent } from "./keys.ts";
 import { stores } from "./stores.ts";
 
 const LEDGER = () => path.join(PATHS.data, "reviews.jsonl");
+const CHECKS = () => path.join(PATHS.data, "review-checks.jsonl");
 
 /** Per-chat card cache, keyed by the record's updatedAt. */
 const cache = new Map<string, { updatedAt: string; cards: ReviewCard[] }>();
@@ -44,51 +59,171 @@ function allCards(): ReviewCard[] {
 	return out;
 }
 
-function readLedger(): ReviewEvent[] {
+const readText = (file: string) => {
 	try {
-		return parseReviewLedger(fs.readFileSync(LEDGER(), "utf-8"));
+		return fs.readFileSync(file, "utf-8");
 	} catch {
-		return [];
+		return "";
 	}
+};
+const readLedger = (): ReviewEvent[] => parseReviewLedger(readText(LEDGER()));
+const readChecks = (): Map<string, ReviewCheck> => parseReviewChecks(readText(CHECKS()));
+
+// ─── background checks ──────────────────────────────────────────────────────
+
+const BATCH = 6;
+/** After a failed run (no model, offline), wait before trying again. */
+const RETRY_MS = 10 * 60_000;
+
+type CheckerSlot = { running?: Promise<void>; lastError?: string; failedAt?: number };
+const checkerKey = "__lhReviewChecker";
+function checkerSlot(): CheckerSlot {
+	const g = globalThis as typeof globalThis & { [checkerKey]?: CheckerSlot };
+	return (g[checkerKey] ??= {});
 }
+
+function auditorEngine() {
+	const spec = resolveRoleSpec("auditor", stores.settingsStore.readSettings());
+	if (!spec) throw new Error("No model is set for background work (Settings → Providers, the cheap slot)");
+	if (!providerKeyPresent(spec.provider)) throw new Error(`${spec.provider} isn't connected (Settings → Providers)`);
+	return piEngineForSpec(spec, true, undefined, () => stores.settingsStore.readSettings()?.models?.cheap?.cacheRetention);
+}
+
+/** Test seam: a scripted checker replaces the model call. */
+type Checker = typeof checkCards;
+let checker: Checker = checkCards;
+export function setReviewChecker(fn: Checker | null): void {
+	checker = fn ?? checkCards;
+	const slot = checkerSlot();
+	slot.failedAt = undefined;
+	slot.lastError = undefined;
+}
+
+/** Check every unchecked card, one session batch at a time. Never throws. */
+export function kickReviewChecks(): Promise<void> {
+	const slot = checkerSlot();
+	if (slot.running) return slot.running;
+	if (slot.failedAt && Date.now() - slot.failedAt < RETRY_MS) return Promise.resolve();
+	const run = (async () => {
+		try {
+			const checks = readChecks();
+			const unchecked = allCards().filter((c) => !checks.has(c.id));
+			if (unchecked.length === 0) return;
+			const engine = checker === checkCards ? auditorEngine() : undefined;
+			const byChat = new Map<string, ReviewCard[]>();
+			for (const c of unchecked) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
+			for (const cards of byChat.values()) {
+				for (let i = 0; i < cards.length; i += BATCH) {
+					const batch = cards.slice(i, i + BATCH);
+					const results = await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine });
+					const at = new Date().toISOString();
+					const lines = results.map((r) =>
+						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, notes: r.notes }),
+					);
+					if (lines.length) {
+						fs.mkdirSync(PATHS.data, { recursive: true });
+						fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
+						emit("reviews-changed", {});
+					}
+				}
+			}
+			slot.lastError = undefined;
+			slot.failedAt = undefined;
+		} catch (err) {
+			slot.lastError = err instanceof Error ? err.message : String(err);
+			slot.failedAt = Date.now();
+		} finally {
+			slot.running = undefined;
+		}
+	})();
+	slot.running = run;
+	return run;
+}
+
+// ─── status ─────────────────────────────────────────────────────────────────
 
 /** A card as the client sees it before answering: no correct answer. */
 export type ReviewQuestion = {
 	id: string;
 	chatId: string;
 	chatTitle: string;
+	context?: string;
 	questionText: string;
 	options: { index: number; label: string }[];
 	multiple: boolean;
 	box: number;
+	/** How many times it has been reviewed (seeds the option shuffle). */
+	reviews: number;
 };
+
+/** One session's share of the deck (the topic picker). */
+export type ReviewTopic = { id: string; title: string; total: number; due: number };
 
 export interface ReviewStatus {
 	due: number;
 	total: number;
+	/** Cards not checked yet, and the reason checking is stalled (if it is). */
+	pending: number;
+	checkError: string | null;
+	held: { id: string; chatTitle: string; questionText: string; verdict: string; reason?: string }[];
+	topics: ReviewTopic[];
 	queue: ReviewQuestion[];
 	calibration: Calibration;
 	/** Every answer time (sessions + reviews), for the client's local-day streak. */
 	activity: string[];
 }
 
-export function reviewStatus(now = new Date(), limit = 20): ReviewStatus {
+function deck(now: Date) {
 	const cards = allCards();
+	const checks = readChecks();
 	const events = readLedger();
-	const due = dueCards(cards, events, now);
+	const ok = cards.filter((c) => checks.get(c.id)?.verdict === "ok").map((c) => checkedCard(c, checks.get(c.id)));
+	return { cards, checks, events, ok, due: dueCards(ok, events, now) };
+}
+
+/** The sidebar and home badges: the count only. */
+export function reviewCounts(now = new Date()): { due: number; total: number } {
+	const { ok, due } = deck(now);
+	void kickReviewChecks();
+	return { due: due.length, total: ok.length };
+}
+
+export function reviewStatus(now = new Date(), opts: { topic?: string; limit?: number } = {}): ReviewStatus {
+	const { cards, checks, events, ok, due } = deck(now);
+	void kickReviewChecks();
+	const topics = new Map<string, ReviewTopic>();
+	for (const c of ok) {
+		const t = topics.get(c.chatId) ?? { id: c.chatId, title: c.chatTitle, total: 0, due: 0 };
+		t.total++;
+		topics.set(c.chatId, t);
+	}
+	for (const c of due) topics.get(c.chatId)!.due++;
+	const inTopic = <T extends { chatId: string }>(list: T[]) => (opts.topic ? list.filter((c) => c.chatId === opts.topic) : list);
+	const shownDue = inTopic(due);
+	const shownOk = inTopic(ok);
+	const okIds = new Set(shownOk.map((c) => c.id));
+	const rated = [...shownOk.map((c) => c.firstAnswer), ...events.filter((e) => okIds.has(e.card))];
 	return {
-		due: due.length,
-		total: cards.length,
-		queue: due.slice(0, limit).map((c) => ({
+		due: shownDue.length,
+		total: shownOk.length,
+		pending: cards.filter((c) => !checks.has(c.id)).length,
+		checkError: checkerSlot().lastError ?? null,
+		held: inTopic(cards)
+			.filter((c) => checks.has(c.id) && checks.get(c.id)!.verdict !== "ok")
+			.map((c) => ({ id: c.id, chatTitle: c.chatTitle, questionText: c.questionText, verdict: checks.get(c.id)!.verdict, reason: checks.get(c.id)!.reason })),
+		topics: [...topics.values()].sort((a, b) => b.due - a.due || b.total - a.total || a.title.localeCompare(b.title)),
+		queue: shownDue.slice(0, opts.limit ?? 20).map((c) => ({
 			id: c.id,
 			chatId: c.chatId,
 			chatTitle: c.chatTitle,
+			...(c.context ? { context: c.context } : {}),
 			questionText: c.questionText,
-			options: c.options,
+			options: c.options.map((o) => ({ index: o.index, label: o.label })),
 			multiple: c.correctIndices.length > 1,
 			box: c.schedule.box,
+			reviews: c.schedule.reviews,
 		})),
-		calibration: calibration([...cards.map((c) => c.firstAnswer), ...events]),
+		calibration: calibration(rated),
 		activity: [...cards.map((c) => c.firstAnswer.at), ...events.map((e) => e.at)],
 	};
 }
@@ -97,13 +232,17 @@ export type ReviewResult = {
 	correct: boolean;
 	correctIndices: number[];
 	explanation?: string;
+	/** Per-option notes, by option index. */
+	notes: Record<string, string>;
 	nextDueAt: string;
 };
 
 /** Grade one review and append it to the ledger. null = unknown card. */
 export function recordReview(cardId: string, selected: number[], confidence: number | undefined, now = new Date()): ReviewResult | null {
-	const card = allCards().find((c) => c.id === cardId);
-	if (!card) return null;
+	const checks = readChecks();
+	const raw = allCards().find((c) => c.id === cardId);
+	if (!raw || checks.get(cardId)?.verdict !== "ok") return null;
+	const card = checkedCard(raw, checks.get(cardId));
 	const correct = isCorrect(selected, card.correctIndices);
 	const event: ReviewEvent = {
 		card: card.id,
@@ -113,6 +252,13 @@ export function recordReview(cardId: string, selected: number[], confidence: num
 	};
 	fs.mkdirSync(PATHS.data, { recursive: true });
 	fs.appendFileSync(LEDGER(), `${JSON.stringify(event)}\n`);
-	const schedule = scheduleCard(card, [...readLedger()], now);
-	return { correct, correctIndices: card.correctIndices, explanation: card.explanation, nextDueAt: schedule.dueAt };
+	emit("reviews-changed", {});
+	const schedule = scheduleCard(card, readLedger(), now);
+	return {
+		correct,
+		correctIndices: card.correctIndices,
+		explanation: card.explanation,
+		notes: Object.fromEntries(card.options.filter((o) => o.note).map((o) => [String(o.index), o.note!])),
+		nextDueAt: schedule.dueAt,
+	};
 }

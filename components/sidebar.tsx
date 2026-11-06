@@ -51,6 +51,7 @@ const STORAGE_KEY = "lh:sidebar-open";
 import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
 import type { UpdateState } from "@/components/settings/update-settings.tsx";
 import { FilePathDropZone } from "@/components/file-path-drop-zone";
+import { useReviewsDue } from "@/components/reviews-due";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -405,18 +406,8 @@ function SessionsSidebar() {
 		window.localStorage.setItem(KIND_FILTER_KEY, f);
 	}, []);
 	const pathname = usePathname();
-	// Spaced reviews due (src/server/reviews.ts) — refreshed per navigation.
-	const [reviewsDue, setReviewsDue] = useState(0);
-	useEffect(() => {
-		let live = true;
-		fetch("/api/reviews", { cache: "no-store" })
-			.then((r) => r.json())
-			.then((j: { due?: number }) => live && setReviewsDue(j.due ?? 0))
-			.catch(() => {});
-		return () => {
-			live = false;
-		};
-	}, [pathname]);
+	// Spaced reviews due (src/server/reviews.ts), live (components/reviews-due.ts).
+	const reviewsDue = useReviewsDue();
 	const router = useRouter();
 	const { open: openSettings } = useSettingsDialog();
 

@@ -52,6 +52,9 @@ export interface ServerEvents {
 	 *  the chat; the client mirrors it by disabling the composer/dock
 	 *  submit. */
 	"compaction-changed": { chatId: string; running: boolean };
+	/** Spaced reviews changed (an answer, a card check, a sync): due
+	 *  counts refetch. */
+	"reviews-changed": Record<string, never>;
 }
 
 export type ServerEventType = keyof ServerEvents;
@@ -69,6 +72,7 @@ export const SERVER_EVENT_TYPES = [
 	"subscriptions-changed",
 	"record-changed",
 	"compaction-changed",
+	"reviews-changed",
 ] as const satisfies readonly ServerEventType[];
 
 /** One notification: the type discriminates the payload. */

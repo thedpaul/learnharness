@@ -26,6 +26,9 @@ export interface QuizOption {
 	label: string;
 	value: string;
 	description?: string;
+	/** quiz only: the per-option comment, revealed after answering under
+	 *  this option — so it reads in the card's (shuffled) order. */
+	rationale?: string;
 }
 
 // ─── tool input schemas (the question contract) ─────────────────────────────
@@ -41,6 +44,21 @@ const quizOptionProps = {
 	value: Type.Optional(
 		Type.String({
 			description: "Optional machine-readable value returned for the option. Defaults to the label.",
+		}),
+	),
+};
+
+/** One quiz option: the bare claim plus its after-answer comment. The
+ *  comment rides the option (not the explanation) because the card
+ *  shuffles: only an option's own note can follow the order he sees. */
+const quizChoiceProps = {
+	...quizOptionProps,
+	rationale: Type.Optional(
+		Type.String({
+			description:
+				"Revealed AFTER he answers, directly under this option: one short line on why THIS option is right, " +
+				"or which misconception makes it wrong. The card shuffles the options, so this is how your comments " +
+				"follow the order he sees — never name options by letter or position anywhere.",
 		}),
 	),
 };
@@ -160,7 +178,7 @@ export const quizInputBase = Type.Object({
 		description:
 			"The single quiz question to ask. ONE question per turn: ask, then end your turn — the answer determines the next question.",
 	}),
-	options: Type.Array(Type.Object(quizOptionProps), {
+	options: Type.Array(Type.Object(quizChoiceProps), {
 		minItems: 2,
 		description:
 			"REQUIRED. The answer options (2 or more) as a JSON ARRAY of option objects — never a " +
@@ -446,7 +464,7 @@ export interface QuestionAnswerData {
 	 *  Absent on old records and probe answers. */
 	questionType?: QuizQuestionType;
 	questionText: string;
-	options?: { index: number; label: string }[]; // snapshot for rendering
+	options?: { index: number; label: string; note?: string }[]; // snapshot for rendering (note: quiz option rationale)
 	dontKnow: boolean;
 	answers: OptionAnswer[];
 	other?: string; // ask: "Other" free text
@@ -556,7 +574,7 @@ export function toggleOther(mode: SelectMode, sel: DockSelection): DockSelection
 // ─── options ────────────────────────────────────────────────────────────────
 
 export function normalizeOptions(
-	options: string | Array<{ label: string; value?: string; description?: string }> | undefined,
+	options: string | Array<{ label: string; value?: string; description?: string; rationale?: string }> | undefined,
 ): QuizOption[] {
 	const seen = new Set<string>();
 	// The persisted tool call can carry GLM's string-encoded options —
@@ -564,13 +582,14 @@ export function normalizeOptions(
 	// prepareArguments runs pre-validation (see parseOptionsIfString).
 	const coerced = parseOptionsIfString(options);
 	const list = Array.isArray(coerced)
-		? (coerced as Array<{ label: string; value?: string; description?: string }>)
+		? (coerced as Array<{ label: string; value?: string; description?: string; rationale?: string }>)
 		: [];
 	return list
 		.map((option) => ({
 			label: option.label.trim(),
 			value: option.value?.trim() || option.label.trim(),
 			description: option.description?.trim() || undefined,
+			...(typeof option.rationale === "string" && option.rationale.trim() ? { rationale: option.rationale.trim() } : {}),
 		}))
 		.filter((option) => {
 			if (option.label.length === 0) return false;
@@ -692,7 +711,8 @@ export function toClientQuestion(qd: QuestionData): ClientQuestion {
 		question: qd.question,
 		context: qd.context,
 		mode: qd.mode,
-		options: qd.options,
+		// The rationale is an after-answer reveal: never in the live question.
+		options: qd.options.map(({ rationale: _rationale, ...o }) => o),
 	};
 }
 
@@ -711,7 +731,7 @@ export function buildAnswer(qd: QuestionData, req: AnswerRequest, tool?: string)
 		...(tool ? { tool } : {}),
 		questionType: qd.questionType,
 		questionText: qd.question,
-		options: qd.options.map((o, i) => ({ index: i + 1, label: o.label })),
+		options: qd.options.map((o, i) => ({ index: i + 1, label: o.label, ...(qd.kind === "quiz" && o.rationale ? { note: o.rationale } : {}) })),
 		dontKnow: req.dontKnow === true,
 		answers: [],
 		thinking: req.thinking?.trim() || undefined,

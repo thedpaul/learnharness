@@ -142,6 +142,13 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 											{descByIndex.get(opt.index)}
 										</ToolContentResponse>
 									)}
+									{isQuiz && whyOpen && opt.note && (
+										// The option's own comment, behind Why with the
+										// explanation: it follows the card's order.
+										<ToolContentResponse className="lh-prose block text-xs text-muted-foreground" data-testid="option-note">
+											{opt.note}
+										</ToolContentResponse>
+									)}
 								</span>
 							</div>
 						);
@@ -197,7 +204,7 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 			{/* px-3→removed: card p-4 + box px-3 double-inset sat the "Why" label deeper
 			    than the option box edges (owner, round 3). Sides flush with everything
 			    else; py-2 stays for vertical air. */}
-			{isQuiz && answer.explanation && (
+			{isQuiz && (answer.explanation || answer.options?.some((o) => o.note)) && (
 				/* The TUCKED explanation — ALL questions (owner, 2026-10-07): the
 				   verdict shows, the explanation sits collapsed behind the Why
 				   toggle — viewable, never center stage. Identical to the
@@ -210,7 +217,7 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 					>
 						{whyOpen ? "Hide why" : "Why"}
 					</button>
-					{whyOpen && (
+					{whyOpen && answer.explanation && (
 						<div className="mt-1.5 rounded-lg bg-muted py-2 text-sm text-foreground/50">
 							<span className="font-medium text-muted-foreground">Why: </span>
 							{/* Keep the first paragraph beside the label, not every paragraph:
