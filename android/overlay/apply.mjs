@@ -401,6 +401,11 @@ html.lh-android, html.lh-android body { overflow-x: hidden; }
 	html.lh-android header > button.font-title { font-size: 1.25rem; line-height: 1.75rem; }
 	html.lh-android header:has(> [data-testid="plan-chip"], > [data-testid="phase-chip"]) { gap: 0.5rem; }
 	html.lh-android header > [data-testid="plan-chip"] { font-size: 0; gap: 0; padding: 0.25rem; }
+	/* Tables in messages: nowrap headers and the scroll wrapper let them grow
+	   to ~3000px; cap them at the column and let headers and cells wrap. */
+	html.lh-android table[data-streamdown="table"] { max-width: 100%; }
+	html.lh-android [data-streamdown="table-header-cell"] { white-space: normal; }
+	html.lh-android [data-streamdown="table-header-cell"], html.lh-android [data-streamdown="table-cell"] { padding-inline: 0.5rem; overflow-wrap: break-word; hyphens: auto; }
 }
 html.lh-android .lh-dictate-label { display: none; }
 /* Recording: the mic stays centered where it was; the dot and level meter
