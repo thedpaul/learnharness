@@ -122,14 +122,6 @@ export function AppSelectMenus() {
 				aria-label={label}
 				className="flex flex-col gap-0.5"
 				style={{ minWidth: open.offsetWidth }}
-				onKeyDown={(e) => {
-					if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-					e.preventDefault();
-					const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
-					const at = items.indexOf(document.activeElement as HTMLButtonElement);
-					const from = at < 0 ? items.findIndex((b) => b.getAttribute("aria-selected") === "true") : at;
-					items[Math.max(0, Math.min(items.length - 1, from + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
-				}}
 			>
 				{options.map((o) => (
 					<button
