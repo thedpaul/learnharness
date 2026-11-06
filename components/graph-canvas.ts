@@ -434,6 +434,18 @@ export function fitTransform(
 	return { x: w / 2 - cx * k, y: h / 2 - cy * k, k };
 }
 
+/** True when no part of `bbox` lies inside the w×h viewport under camera
+ *  `t`: a restored camera that shows nothing of the graph (the layout moved
+ *  since it was saved, e.g. positions synced from another device). */
+export function bboxOffscreen(
+	bbox: { minX: number; maxX: number; minY: number; maxY: number },
+	t: { x: number; y: number; k: number },
+	w: number,
+	h: number,
+): boolean {
+	return bbox.maxX * t.k + t.x < 0 || bbox.minX * t.k + t.x > w || bbox.maxY * t.k + t.y < 0 || bbox.minY * t.k + t.y > h;
+}
+
 /** The arrowhead geometry for a directed edge a→b: shaft endpoints
  *  (clear of both node discs) and the head triangle (tip on the target
  *  disc edge, wideness = 0.8 × head length — the sigma arrow shape). */
@@ -740,6 +752,7 @@ export class GraphCanvasRenderer {
 						zoomIdentity.translate(this.viewW / 2 - wx * k, this.viewH / 2 - wy * k).scale(k),
 					);
 				}
+				this.refitIfLost();
 			}
 			// Redraw SYNCHRONOUSLY: syncSize may have reallocated the backing
 			// store (which clears the canvas), and during live window resizes
@@ -770,7 +783,10 @@ export class GraphCanvasRenderer {
 		if (!this.hasFit && data.nodes.length > 0) this.fit();
 		// The camera may be user-restored (constructor initialCamera) — the
 		// gate's "1×" reference still needs the fresh bbox's fit zoom.
-		else this.refreshFitZoom();
+		else {
+			this.refreshFitZoom();
+			this.refitIfLost();
+		}
 		// Rebuild the live sim around the fresh nodes. New data means the
 		// server spoke (merge or refetch); any pending commit is moot and
 		// the graph is at rest until the next drag.
@@ -881,6 +897,15 @@ export class GraphCanvasRenderer {
 		this.visible = visible;
 		this.geoVersion++; // member visibility changes hulls + paths
 		this.markDirty();
+	}
+
+	/** A camera showing none of the graph (restored from before the layout
+	 *  moved) frames it again instead of leaving the canvas blank. */
+	private refitIfLost(): void {
+		const w = this.canvas.clientWidth;
+		const h = this.canvas.clientHeight;
+		if (!this.worldBBox || w < 10 || h < 10 || !this.data?.nodes.length) return;
+		if (bboxOffscreen(this.worldBBox, this.transform, w, h)) this.fit();
 	}
 
 	/** Frame the whole graph (padding included). Keeps the camera on later

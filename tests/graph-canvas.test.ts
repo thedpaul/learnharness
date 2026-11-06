@@ -16,6 +16,7 @@ import {
 	arrowGeometry,
 	isImpNodeId,
 	boxBlurRound,
+	bboxOffscreen,
 	fitTransform,
 	labelAlpha,
 	pickNearest,
@@ -96,6 +97,21 @@ describe("d3 camera composition (the persisted-camera restore path)", () => {
 		// same screen position for the same world point.
 		const p = t.apply([7, 9]);
 		assert.deepEqual(p, [7 * 3.5 + 120, 9 * 3.5 - 40]);
+	});
+});
+
+describe("bboxOffscreen", () => {
+	const bbox = { minX: -1117, maxX: -524, minY: -3554, maxY: -2886 };
+	it("a camera saved before the layout moved shows nothing of the graph", () => {
+		// The phone's real case: every node lands up and to the left of the screen.
+		assert.equal(bboxOffscreen(bbox, { k: 0.649, x: 160, y: 423 }, 392, 785), true);
+	});
+	it("the fit camera, and one showing any part of the graph, are not lost", () => {
+		assert.equal(bboxOffscreen(bbox, fitTransform(bbox, 392, 785, 40), 392, 785), false);
+		assert.equal(bboxOffscreen(bbox, fitTransform(bbox, 785, 392, 40), 785, 392), false);
+		// Only the right edge of the graph is on screen: still found.
+		assert.equal(bboxOffscreen({ minX: -100, maxX: 10, minY: 0, maxY: 50 }, { k: 1, x: 0, y: 0 }, 300, 300), false);
+		assert.equal(bboxOffscreen({ minX: -100, maxX: -1, minY: 0, maxY: 50 }, { k: 1, x: 0, y: 0 }, 300, 300), true);
 	});
 });
 
