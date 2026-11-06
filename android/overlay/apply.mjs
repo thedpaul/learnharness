@@ -461,8 +461,8 @@ edit("components/chat.tsx", [[
 							</button>`,
 ]]);
 fs.appendFileSync(path.join(root, "app/globals.css"), `
-/* Android: a long session title slides through; renaming floats the field
-   over the top of the screen at a readable size. */
+/* Android: a long session title slides through; renaming edits in place at
+   the header's phone title size. */
 html.lh-android header button.font-title.lh-marquee {
 	text-overflow: clip;
 	mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
@@ -480,16 +480,6 @@ html.lh-android header button.font-title.lh-marquee > .lh-title-text {
 	html.lh-android header button.font-title.lh-marquee > .lh-title-text { animation: none; }
 	html.lh-android header button.font-title.lh-marquee { text-overflow: ellipsis; }
 }
-html.lh-android input[aria-label="Session title"] {
-	position: fixed; z-index: 60; top: 0.75rem; left: 0.75rem; right: 0.75rem;
-	width: auto; max-width: none; min-width: 0;
-	field-sizing: fixed; font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
-	font-size: 1.125rem; line-height: 1.75rem; letter-spacing: normal;
-	padding: 0.75rem 1rem; border-radius: 0.75rem;
-	background: var(--card); border: 1px solid var(--border);
-	box-shadow: 0 8px 24px rgb(0 0 0 / 0.35), 0 0 0 100vmax rgb(0 0 0 / 0.45);
-	animation: lh-float-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@keyframes lh-float-in { from { opacity: 0; transform: translateY(-6px); } }
+html.lh-android input[aria-label="Session title"] { font-size: 1.25rem; line-height: 1.75rem; max-width: 100%; min-width: 0; flex: 1 1 auto; field-sizing: fixed; }
 `);
 console.log("[overlay] app/globals.css (title marquee, floating rename)");
