@@ -5,6 +5,7 @@ import { useActivity } from "@/components/activity-dock";
 import { usePopoverDismiss } from "@/components/popover-dismiss";
 import { useSettingsSaved } from "@/components/settings-signal";
 import { formatTokens } from "@/components/usage-format";
+import { sharedGetJson } from "@/components/shared-get";
 import { Hint } from "@/components/ui/hint";
 import { timeAgo } from "@/components/sidebar";
 import { resolveSettings } from "@/src/core";
@@ -45,10 +46,8 @@ export interface SessionCoverage {
  *  nothing rather than a fake zero; the honest-render doctrine). */
 async function fetchCoverage(chatId: string): Promise<SessionCoverage | null> {
 	try {
-		const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}`);
-		if (!res.ok) return null;
-		const body = (await res.json()) as { coverage?: SessionCoverage | null };
-		return body.coverage ?? null;
+		const { body } = await sharedGetJson<{ coverage?: SessionCoverage | null }>(`/api/chats/${encodeURIComponent(chatId)}`);
+		return body?.coverage ?? null;
 	} catch {
 		return null;
 	}
@@ -69,9 +68,8 @@ export interface GraphRead {
  *  raw settings delta to the factory-true graph section. */
 export async function fetchGraphRead(): Promise<GraphRead | null> {
 	try {
-		const res = await fetch("/api/settings");
-		if (!res.ok) return null;
-		const body = (await res.json()) as { settings?: Parameters<typeof resolveSettings>[0] };
+		const { body } = await sharedGetJson<{ settings?: Parameters<typeof resolveSettings>[0] }>("/api/settings");
+		if (!body) return null;
 		const graph = resolveSettings(body.settings ?? null).graph;
 		return { enabled: graph.enabled, chunkTokens: graph.extractionChunkTokens };
 	} catch {

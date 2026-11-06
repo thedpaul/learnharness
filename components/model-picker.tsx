@@ -10,6 +10,7 @@ import { MenuShell } from "@/components/menu-shell";
 import { Hint } from "@/components/ui/hint";
 import { notifySettingsSaved, useSettingsSaved } from "@/components/settings-signal";
 import { useModelCatalog } from "@/components/model-catalog";
+import { sharedGetJson } from "@/components/shared-get";
 export { useModelCatalog } from "@/components/model-catalog";
 import { defaultOrderLevel, populateLevel, THINKING_LABEL } from "@/components/thinking-default";
 
@@ -56,16 +57,15 @@ export function ModelControl({ chatId, onModelChange }: { chatId?: string; onMod
 	// reads the models section alone.
 	const readRecord = useCallback(() => {
 		if (chatId) {
-			fetch(`/api/chats/${chatId}`)
-				.then((r) => { if (!r.ok) throw new Error(`session read failed: ${r.status}`); return r.json() as Promise<{ settings?: ChatSettings }>; })
+			sharedGetJson<{ settings?: ChatSettings }>(`/api/chats/${chatId}`)
+				.then(({ ok, status, body }) => { if (!ok || !body) throw new Error(`session read failed: ${status}`); return body; })
 				.then((body) => setSession({ settings: body.settings }))
 				.catch(() => {
 					/* same read-only posture as a models-section failure */
 				});
 		}
-		fetch("/api/settings")
-			.then((r) => r.json() as Promise<{ settings: { models?: ModelsSettings } | null }>)
-			.then((body) => setModels(body.settings?.models ?? undefined))
+		sharedGetJson<{ settings: { models?: ModelsSettings } | null }>("/api/settings")
+			.then(({ body }) => setModels(body?.settings?.models ?? undefined))
 			.catch(() => {
 				/* the record fetch failing leaves the control read-only
 				   ("—" triggers, closed menus) — same posture as a
