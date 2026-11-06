@@ -56,6 +56,22 @@ For lessons, attach material to a session instead. Use the graph's **Extract fil
 
 The graph stores propositions and reasoning chains with source provenance, **not mastery scores**. A proposition's presence is not proof that you understood or retained it. Automatic session extraction can be disabled independently of graph rendering.
 
+<!-- Sync is switched off for now (src/core/sync-flag.ts); restore this section with it.
+
+## Sync across devices
+
+**Settings → Sync** keeps your sessions, knowledge graph, finished background jobs and settings the same on every device, through a private LearnHarness folder in your Google Drive (the `drive.appdata` space, which nothing else in your Drive can see).
+
+Google requires an app identity, so you bring your own OAuth client once: create a Google Cloud project, enable the Google Drive API, set up the Google Auth Platform app and **Publish** it (otherwise the sign-in expires after 7 days), then create a **Desktop app** client and paste its ID and secret into Settings → Sync on each device. The section lists the steps with links. Then **Connect Google Drive** signs in in your browser.
+
+With automatic sync on, the app syncs when it opens, every minute while it's open, and when you switch away. What merges how:
+
+- Graph ledgers combine line by line: progress from both devices is kept, and a session deleted on one device is deleted on the other.
+- A session changed on both devices since the last sync: the newer copy wins, and the other is kept in `data/.sync/conflicts/`.
+- Settings merge key by key. API keys, the dictation engine, Claude Code, the custom provider and file-access folders stay per device.
+- Background jobs sync once they finish, so another device never re-runs one.
+-->
+
 ## Data, privacy, and usage
 
 Chats, graph records, settings, and credentials live on your machine. Packaged desktop data normally lives under:
