@@ -10,6 +10,12 @@
  * Leitner boxes, the same "position derives, nothing tracks" rule as the
  * plan statuses.
  *
+ * CHECKS gate the deck: a card enters reviews only after a model has
+ * checked it (src/agent/subagents/card-checker.ts) — the answer key is
+ * right, the question stands on its own (else the check writes the context
+ * it needs), and every option gets a one-line note. Checks are a second
+ * ledger (review-checks.jsonl), so they sync like the reviews.
+ *
  * CALIBRATION reads every confidence-rated answer (sessions and reviews):
  * per confidence bin, how often the learner was actually right.
  */
@@ -23,11 +29,16 @@ export interface ReviewCard {
 	/** The plan node the question was about (teach checks), if any. */
 	nodeId?: string;
 	questionText: string;
-	options: { index: number; label: string }[];
+	/** Stored order; `note` = the authoring model's per-option comment. */
+	options: { index: number; label: string; note?: string }[];
 	correctIndices: number[];
 	explanation?: string;
 	/** The answer in the session: the first point on the schedule. */
 	firstAnswer: ReviewAnswer;
+	/** The teaching right before the question (server-side, for the check). */
+	lead?: string;
+	/** From the check: what the question needs to stand on its own. */
+	context?: string;
 }
 
 export interface ReviewAnswer {
@@ -42,6 +53,8 @@ export interface ReviewEvent extends ReviewAnswer {
 	card: string;
 }
 
+const LEAD_CHARS = 4000;
+
 /** Minimal structural slice of the native record (LhMessage). */
 interface NativeLike {
 	role?: string;
@@ -55,10 +68,16 @@ interface NativeLike {
  *  options and a known correct answer. Dismissed questions never count. */
 export function extractReviewCards(chatId: string, chatTitle: string, messages: readonly NativeLike[]): ReviewCard[] {
 	const nodeOf = new Map<string, string>();
+	const leadOf = new Map<string, string>();
+	// The teaching since the learner last spoke: what a question leans on.
+	let lead = "";
 	for (const m of messages) {
+		if (m.role === "user") lead = "";
 		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
-		for (const b of m.content as Array<{ type?: string; id?: string; arguments?: unknown }>) {
+		for (const b of m.content as Array<{ type?: string; id?: string; text?: string; arguments?: unknown }>) {
+			if (b.type === "text" && typeof b.text === "string") lead = `${lead}\n\n${b.text}`.slice(-LEAD_CHARS);
 			if (b.type !== "toolCall" || typeof b.id !== "string") continue;
+			leadOf.set(b.id, lead.trim());
 			const nodeId = (b.arguments as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId === "string") nodeOf.set(b.id, nodeId);
 		}
@@ -77,7 +96,7 @@ export function extractReviewCards(chatId: string, chatTitle: string, messages: 
 			chatTitle,
 			nodeId: nodeOf.get(m.toolCallId),
 			questionText: d.questionText,
-			options: d.options.map((o) => ({ index: o.index, label: o.label })),
+			options: d.options.map((o) => ({ index: o.index, label: o.label, ...(o.note ? { note: o.note } : {}) })),
 			correctIndices: [...d.correctIndices],
 			explanation: d.explanation,
 			firstAnswer: {
@@ -85,6 +104,7 @@ export function extractReviewCards(chatId: string, chatTitle: string, messages: 
 				correct: d.correct === true,
 				confidence: d.dontKnow ? undefined : d.confidence,
 			},
+			lead: leadOf.get(m.toolCallId) || undefined,
 		});
 	}
 	return cards;
@@ -206,4 +226,65 @@ export function parseReviewLedger(text: string): ReviewEvent[] {
 		}
 	}
 	return out;
+}
+
+// ─── checks ─────────────────────────────────────────────────────────────────
+
+/** Bump to re-check every card (a better checker, a new rule). */
+export const REVIEW_CHECK_VERSION = 1;
+
+export type ReviewVerdict = "ok" | "wrong" | "unclear";
+
+/** One review-checks.jsonl line; the newest current-version line per card wins. */
+export interface ReviewCheck {
+	card: string;
+	at: string;
+	v: number;
+	verdict: ReviewVerdict;
+	/** Why a card was held back (wrong / unclear). */
+	reason?: string;
+	/** Markdown the card needs to stand on its own (shown above the question). */
+	context?: string;
+	/** One line per option, by option index ("1", "2", …). */
+	notes?: Record<string, string>;
+}
+
+export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
+	const out = new Map<string, ReviewCheck>();
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		try {
+			const c = JSON.parse(line) as Partial<ReviewCheck>;
+			if (typeof c.card !== "string" || typeof c.at !== "string" || c.v !== REVIEW_CHECK_VERSION) continue;
+			if (c.verdict !== "ok" && c.verdict !== "wrong" && c.verdict !== "unclear") continue;
+			const prev = out.get(c.card);
+			if (prev && prev.at > c.at) continue;
+			out.set(c.card, {
+				card: c.card,
+				at: c.at,
+				v: c.v,
+				verdict: c.verdict,
+				...(typeof c.reason === "string" && c.reason ? { reason: c.reason } : {}),
+				...(typeof c.context === "string" && c.context.trim() ? { context: c.context.trim() } : {}),
+				...(c.notes && typeof c.notes === "object" ? { notes: c.notes } : {}),
+			});
+		} catch {
+			/* a torn line: skip */
+		}
+	}
+	return out;
+}
+
+/** The card as reviewed: the check's context, and per-option notes (the
+ *  authoring model's own first, the check's for older cards). */
+export function checkedCard(card: ReviewCard, check: ReviewCheck | undefined): ReviewCard {
+	if (!check) return card;
+	return {
+		...card,
+		...(check.context ? { context: check.context } : {}),
+		options: card.options.map((o) => {
+			const note = o.note ?? check.notes?.[String(o.index)];
+			return note ? { ...o, note } : o;
+		}),
+	};
 }

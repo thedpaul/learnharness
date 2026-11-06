@@ -51,7 +51,9 @@ export function answerForPresentation(answer: QuestionAnswerData, input: unknown
 	}
 	projected.options = saved.map((option, si) => {
 		const oi = bindings.get(si);
-		return oi === undefined ? option : { ...option, label: original[oi]!.label };
+		if (oi === undefined) return option;
+		const note = quiz ? original[oi]!.rationale : undefined;
+		return { ...option, label: original[oi]!.label, ...(note ? { note } : {}) };
 	});
 	return projected;
 }

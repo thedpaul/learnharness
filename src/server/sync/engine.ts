@@ -6,7 +6,8 @@
  * What syncs is the learning progress and the settings:
  *   chats/*.json, jobs/*.json (settled only: a "running" job would be
  *   re-run by the other device's crash recovery), graph/*, reviews.jsonl
- *   (spaced-review history) and settings.json.
+ *   and review-checks.jsonl (spaced-review history and card checks) and
+ *   settings.json.
  * Never: models/, debug/, .sync/ itself.
  *
  * Per path, with L/R/B the local/remote/base md5:
@@ -58,7 +59,7 @@ const parseJson = (b: Buffer): unknown => { try { return JSON.parse(b.toString("
 /** The synced relative paths (POSIX separators). */
 export function isSyncedPath(rel: string): boolean {
 	if (rel.includes("..") || rel.startsWith("/")) return false;
-	if (rel === "settings.json" || rel === "reviews.jsonl") return true;
+	if (rel === "settings.json" || rel === "reviews.jsonl" || rel === "review-checks.jsonl") return true;
 	if (/^chats\/[A-Za-z0-9_-]+\.json$/.test(rel)) return true;
 	if (/^jobs\/[A-Za-z0-9_-]+\.json$/.test(rel)) return true;
 	return /^graph\/[A-Za-z0-9_.-]+\.(jsonl|json)$/.test(rel);
@@ -104,6 +105,7 @@ function localFiles(dataDir: string): { files: Map<string, Buffer>; held: Set<st
 	};
 	take("settings.json");
 	take("reviews.jsonl");
+	take("review-checks.jsonl");
 	for (const dir of ["chats", "jobs", "graph"]) {
 		let names: string[] = [];
 		try { names = fs.readdirSync(path.join(dataDir, dir)); } catch { continue; }

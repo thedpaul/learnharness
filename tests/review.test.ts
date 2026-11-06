@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	calibration,
+	checkedCard,
 	dueCards,
 	extractReviewCards,
+	parseReviewChecks,
 	parseReviewLedger,
 	REVIEW_BOX_DAYS,
+	REVIEW_CHECK_VERSION,
 	scheduleCard,
 	streakDays,
 	type ReviewCard,
@@ -128,4 +131,35 @@ test("ledger: valid lines parse, torn lines are skipped", () => {
 		{ card: "a", at: "t", correct: true, confidence: 70 },
 		{ card: "c", at: "t", correct: false, confidence: undefined },
 	]);
+});
+
+test("cards: the teaching since the learner last spoke is the lead; option notes ride along", () => {
+	const messages = [
+		{ role: "user", content: [{ type: "text", text: "old question" }] },
+		{ role: "assistant", content: [{ type: "text", text: "Here is a loop:\n```\nfor i in range(3): print(i)\n```" }] },
+		{ role: "user", content: [{ type: "text", text: "ok" }] },
+		{ role: "assistant", content: [
+			{ type: "text", text: "It prints each i." },
+			{ type: "toolCall", id: "call_1", name: "quiz", arguments: {} },
+		] },
+		{ role: "toolResult", toolCallId: "call_1", toolName: "quiz", details: answer({ options: [{ index: 1, label: "3", note: "counts from 1" }, { index: 2, label: "4" }] }) },
+	];
+	const [card] = extractReviewCards("c", "t", messages);
+	assert.equal(card!.lead, "It prints each i.");
+	assert.deepEqual(card!.options[0], { index: 1, label: "3", note: "counts from 1" });
+});
+
+test("checks: newest current-version line wins; checkedCard adds context and fills missing notes", () => {
+	const text = [
+		JSON.stringify({ card: "a", at: "2030-01-01", v: REVIEW_CHECK_VERSION, verdict: "unclear", reason: "vague" }),
+		JSON.stringify({ card: "a", at: "2030-01-02", v: REVIEW_CHECK_VERSION, verdict: "ok", context: "Given `x = 2`.", notes: { "1": "n1", "2": "n2" } }),
+		JSON.stringify({ card: "b", at: "2030-01-03", v: REVIEW_CHECK_VERSION + 1, verdict: "ok" }),
+		"{torn",
+	].join("\n");
+	const checks = parseReviewChecks(text);
+	assert.equal(checks.size, 1);
+	assert.equal(checks.get("a")!.verdict, "ok");
+	const c = checkedCard({ ...card(), options: [{ index: 1, label: "x", note: "own" }, { index: 2, label: "y" }] }, checks.get("a"));
+	assert.equal(c.context, "Given `x = 2`.");
+	assert.deepEqual(c.options.map((o) => o.note), ["own", "n2"]);
 });
