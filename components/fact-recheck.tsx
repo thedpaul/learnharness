@@ -10,6 +10,7 @@ import { Loader2Icon, ShieldCheckIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useServerEvent } from "@/components/server-events";
 import { Hint } from "@/components/ui/hint";
+import { NoteMarkdown } from "@/components/note-markdown";
 
 type Status = {
 	running: boolean;
@@ -124,8 +125,14 @@ export function FactRecheckResult({ result, onDismiss }: { result: NonNullable<S
 					{result.corrected.map((c, i) => (
 						<li key={i}>
 							<div className="font-medium text-foreground">{c.name}</div>
-							<div className="text-muted-foreground">{c.statement}</div>
-							{c.reason && <div className="mt-0.5 italic text-muted-foreground/80">{c.reason}</div>}
+							<div className="text-muted-foreground">
+								<NoteMarkdown>{c.statement}</NoteMarkdown>
+							</div>
+							{c.reason && (
+								<div className="mt-0.5 italic text-muted-foreground/80">
+									<NoteMarkdown>{c.reason}</NoteMarkdown>
+								</div>
+							)}
 						</li>
 					))}
 				</ul>

@@ -9,6 +9,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
+import { NoteMarkdown } from "@/components/note-markdown";
 import { markChangesSeen, useChanges, type Change } from "@/components/changes";
 import { TopBar } from "@/components/top-bar";
 import { questionAnchorId } from "@/src/core";
@@ -72,7 +73,11 @@ export function ChangesView() {
 									<div className="lh-prose text-sm">
 										<ToolContentResponse>{c.questionText}</ToolContentResponse>
 									</div>
-									{c.reason && <p className="text-xs text-muted-foreground">{c.reason}</p>}
+									{c.reason && (
+										<div className="text-xs text-muted-foreground">
+											<NoteMarkdown>{c.reason}</NoteMarkdown>
+										</div>
+									)}
 									<Link href={`/chat/${encodeURIComponent(c.chatId)}#${encodeURIComponent(questionAnchorId(c.toolCallId))}`} className="self-start text-xs underline underline-offset-2 hover:text-foreground">
 										In {c.chatTitle}
 									</Link>
@@ -86,7 +91,11 @@ export function ChangesView() {
 									<div className="lh-prose text-sm">
 										<ToolContentResponse>{c.statement}</ToolContentResponse>
 									</div>
-									{c.reason && <p className="text-xs text-muted-foreground">{c.reason}</p>}
+									{c.reason && (
+										<div className="text-xs text-muted-foreground">
+											<NoteMarkdown>{c.reason}</NoteMarkdown>
+										</div>
+									)}
 								</>
 							)}
 						</div>

@@ -204,6 +204,16 @@ body {
 	font-weight: 900;
 }
 
+/* Check notes rendered as markdown keep the note's own type (note-markdown.tsx). */
+.lh-prose.lh-note-md {
+	font-family: inherit;
+	font-size: inherit;
+	line-height: inherit;
+}
+.lh-note-md :where(p) {
+	margin: 0;
+}
+
 .lh-prose :where(strong, b) {
 	color: var(--lh-ink-strong);
 	font-weight: 700;
