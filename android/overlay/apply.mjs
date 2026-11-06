@@ -371,13 +371,11 @@ edit("app/layout.tsx", [[
 	`import { SyncAgent } from "@/components/sync-agent";`,
 	`import { SyncAgent } from "@/components/sync-agent";
 import { AndroidDockScroll } from "@/components/android-dock-scroll";
-import { AndroidTitleMarquee } from "@/components/android-title-marquee";
 import { AndroidHandedness } from "@/components/android-handedness";`,
 ], [
 	`			<SyncAgent />`,
 	`			<SyncAgent />
 			<AndroidDockScroll />
-			<AndroidTitleMarquee />
 			<AndroidHandedness />`,
 ]]);
 fs.appendFileSync(path.join(root, "app/globals.css"), `
@@ -454,62 +452,13 @@ edit("components/chat.tsx", [[
 			});`,
 ]]);
 
-// Session title: the text gets its own span so a long title can slide
-// through (overlay/files/components/android-title-marquee.tsx).
-edit("components/chat.tsx", [[
-	`							{titleText}
-							</button>`,
-	`							<span className="lh-title-text">{titleText}</span>
-							</button>`,
-]]);
+// Renaming edits in place at the header's phone title size. (The long-title
+// slide is shared code now: components/title-marquee.tsx.)
 fs.appendFileSync(path.join(root, "app/globals.css"), `
-/* Android: a long session title slides through; renaming edits in place at
-   the header's phone title size. */
-html.lh-android header button.font-title.lh-marquee {
-	text-overflow: clip;
-	mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
-}
-html.lh-android header button.font-title > .lh-title-text { display: inline-block; white-space: nowrap; }
-html.lh-android header button.font-title.lh-marquee > .lh-title-text {
-	animation: lh-marquee var(--lh-marquee-time, 8s) ease-in-out infinite;
-}
-@keyframes lh-marquee {
-	0%, 18% { transform: translateX(0); }
-	50%, 68% { transform: translateX(var(--lh-marquee-dist, 0px)); }
-	100% { transform: translateX(0); }
-}
-@media (prefers-reduced-motion: reduce) {
-	html.lh-android header button.font-title.lh-marquee > .lh-title-text { animation: none; }
-	html.lh-android header button.font-title.lh-marquee { text-overflow: ellipsis; }
-}
 html.lh-android input[aria-label="Session title"] { font-size: 1.25rem; line-height: 1.75rem; max-width: 100%; min-width: 0; flex: 1 1 auto; field-sizing: fixed; }
 `);
-console.log("[overlay] app/globals.css (title marquee, floating rename)");
+console.log("[overlay] app/globals.css (floating rename)");
 
-// Sidebar session titles slide through too (android-title-marquee.tsx).
-edit("components/sidebar.tsx", [[
-	`<span className="block truncate font-prose text-(length:--lh-prose-size)">{chat.title}</span>`,
-	`<span className="lh-row-title block truncate font-prose text-(length:--lh-prose-size)"><span className="lh-title-text">{chat.title}</span></span>`,
-]]);
-fs.appendFileSync(path.join(root, "app/globals.css"), `
-/* Android: long sidebar titles slide like the header's, only while the sidebar is open. */
-html.lh-android .lh-row-title > .lh-title-text { display: inline-block; white-space: nowrap; }
-html.lh-android .lh-row-title.lh-marquee {
-	text-overflow: clip;
-	mask-image: linear-gradient(to right, transparent, #000 0.5rem, #000 calc(100% - 0.5rem), transparent);
-}
-html.lh-android .lh-row-title.lh-marquee > .lh-title-text {
-	animation: lh-marquee var(--lh-marquee-time, 8s) ease-in-out infinite;
-	will-change: transform;
-}
-html.lh-android aside.lh-sidebar[aria-hidden="true"] .lh-row-title > .lh-title-text,
-html.lh-android.lh-editing .lh-row-title > .lh-title-text { animation-play-state: paused; }
-@media (prefers-reduced-motion: reduce) {
-	html.lh-android .lh-row-title.lh-marquee > .lh-title-text { animation: none; }
-	html.lh-android .lh-row-title.lh-marquee { text-overflow: ellipsis; }
-}
-`);
-console.log("[overlay] components/sidebar.tsx + app/globals.css (sidebar title marquee)");
 
 // Opening a long session: render the latest messages first and fill in the
 // older history afterwards (overlay/files/components/android-message-window.ts).
@@ -566,9 +515,6 @@ html.lh-android .bg-background\\/80, html.lh-android .bg-background\\/85 { backg
 	html.lh-android .lh-sidebar-backdrop { animation: lh-fade-in 220ms ease-out; }
 	@keyframes lh-fade-in { from { opacity: 0; } }
 }
-/* The sliding title: keeps sliding while it doesn't fit; paused while typing. */
-html.lh-android header button.font-title.lh-marquee > .lh-title-text { will-change: transform; }
-html.lh-android.lh-editing header button.font-title.lh-marquee > .lh-title-text { animation-play-state: paused; }
 `);
 console.log("[overlay] app/globals.css (fluidity)");
 

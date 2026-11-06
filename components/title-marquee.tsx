@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Android build only (android/overlay): a session title too long for the
- * phone's header slides through instead of being cut off — scroll to the
+ * A session title too long for the header slides through instead of being
+ * cut off — scroll to the
  * end, pause, back. Short titles stay still. The distance is measured per
  * title (and on resize) into --lh-marquee-dist. It keeps sliding while the
  * title doesn't fit (a new title restarts it) and pauses while typing. The
@@ -34,7 +34,7 @@ function measure() {
 	}
 }
 
-export function AndroidTitleMarquee() {
+export function TitleMarquee() {
 	useEffect(() => {
 		let raf = 0;
 		const schedule = () => {

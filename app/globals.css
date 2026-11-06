@@ -621,3 +621,38 @@ body {
 .lh-math-glue {
 	white-space: nowrap;
 }
+
+/* Long session titles slide through instead of being cut off — the header's
+   and the sidebar's (components/title-marquee.tsx measures and toggles
+   .lh-marquee). Paused while typing and while the sidebar is closed. */
+header button.font-title > .lh-title-text,
+.lh-row-title > .lh-title-text {
+	display: inline-block;
+	white-space: nowrap;
+}
+header button.font-title.lh-marquee,
+.lh-row-title.lh-marquee {
+	text-overflow: clip;
+	mask-image: linear-gradient(to right, transparent, #000 0.6rem, #000 calc(100% - 0.6rem), transparent);
+}
+header button.font-title.lh-marquee > .lh-title-text,
+.lh-row-title.lh-marquee > .lh-title-text {
+	animation: lh-marquee var(--lh-marquee-time, 8s) ease-in-out infinite;
+	will-change: transform;
+}
+@keyframes lh-marquee {
+	0%, 18% { transform: translateX(0); }
+	50%, 68% { transform: translateX(var(--lh-marquee-dist, 0px)); }
+	100% { transform: translateX(0); }
+}
+html.lh-editing header button.font-title.lh-marquee > .lh-title-text,
+html.lh-editing .lh-row-title > .lh-title-text,
+aside[aria-hidden="true"] .lh-row-title > .lh-title-text {
+	animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+	header button.font-title.lh-marquee > .lh-title-text,
+	.lh-row-title.lh-marquee > .lh-title-text { animation: none; }
+	header button.font-title.lh-marquee,
+	.lh-row-title.lh-marquee { text-overflow: ellipsis; }
+}

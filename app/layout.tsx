@@ -9,6 +9,7 @@ import { AppearanceProvider } from "@/components/settings/appearance";
 import UpdateBanner from "@/components/update-banner";
 import { SyncAgent } from "@/components/sync-agent";
 import { ReviewReminder } from "@/components/review-reminder";
+import { TitleMarquee } from "@/components/title-marquee";
 
 // Chrome = JetBrains Mono, teaching prose = Source Sans 3, titles = CMU
 // Serif (the bundled lh-cmu @font-face in globals.css — no CDN).
@@ -36,6 +37,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 				</AppearanceProvider>
 				{/* Review reminders at the scheduled times (review-reminder.tsx). */}
 				<ReviewReminder />
+				{/* Long session titles slide through (title-marquee.tsx). */}
+				<TitleMarquee />
 			</ServerEventsProvider>
 			{/* Auto-update banner (Wave C): fixed card, Electron-only pushes. */}
 			<UpdateBanner />
