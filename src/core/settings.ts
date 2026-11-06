@@ -35,7 +35,10 @@ import { CLAUDE_CODE_PROVIDER } from "./contracts/claude-code.ts";
 import type { ModelRole } from "../../config.ts";
 import type { ChatSettings } from "./contracts/chat.ts";
 import { isSearchEngineId, type SearchEngineId } from "./search.ts";
-import { isDictationLanguage, type DictationLanguage } from "./dictation.ts";
+import {
+	isDictationEngine, isDictationLanguage, isTranscriptionEndpointUrl, isWhisperModel,
+	type DictationEngine, type DictationLanguage, type WhisperModelId,
+} from "./dictation.ts";
 import { parseFileAccessSettings, type FileAccessSettings } from "./file-access.ts";
 
 /** The schema version this code understands. Bump ONLY for breaking shape
@@ -340,6 +343,15 @@ export interface GeneralSettings {
 /** One app-wide dictation preference, shared by every composer. */
 export interface DictationSettings {
 	language?: DictationLanguage;
+	/** Absent = Deepgram (the original engine). */
+	engine?: DictationEngine;
+	/** The local Whisper checkpoint (engine "whisper"). */
+	whisperModel?: WhisperModelId;
+	/** OpenAI-compatible transcription server (engine "endpoint"). Its
+	 *  optional key lives in auth.json as STT_ENDPOINT_API_KEY. */
+	endpointUrl?: string;
+	/** The model name sent to the endpoint (absent = "whisper-1"). */
+	endpointModel?: string;
 }
 
 /** Agent settings — everything about the non-conversation machinery. */
@@ -495,7 +507,7 @@ export interface UserSettings {
 export interface FactorySettings {
 	version: number;
 	general: Required<GeneralSettings>;
-	dictation: Required<DictationSettings>;
+	dictation: Required<Pick<DictationSettings, "language" | "engine" | "whisperModel">>;
 	appearance: {
 		mode: "dark" | "light";
 		background: string | null;
@@ -515,7 +527,7 @@ export interface FactorySettings {
 export const FACTORY_SETTINGS: FactorySettings = {
 	version: CURRENT_SETTINGS_VERSION,
 	general: { autoUpdate: true },
-	dictation: { language: "en" },
+	dictation: { language: "en", engine: "deepgram", whisperModel: "onnx-community/whisper-base" },
 	appearance: {
 		mode: "dark",
 		background: null, // the dark default (#141414) lives in the mode's derivation curve
@@ -805,6 +817,21 @@ function sanitizeCompaction(raw: Record<string, unknown>): CompactionSettings {
 	return out;
 }
 
+/** Field-wise: one bad field never costs the others. */
+function sanitizeDictation(raw: unknown): DictationSettings {
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+	const r = raw as Record<string, unknown>;
+	const out: DictationSettings = {};
+	if (isDictationLanguage(r.language)) out.language = r.language;
+	if (isDictationEngine(r.engine)) out.engine = r.engine;
+	if (isWhisperModel(r.whisperModel)) out.whisperModel = r.whisperModel;
+	if (isTranscriptionEndpointUrl(r.endpointUrl)) out.endpointUrl = r.endpointUrl;
+	if (typeof r.endpointModel === "string" && r.endpointModel.trim() && r.endpointModel.length <= 200) {
+		out.endpointModel = r.endpointModel.trim();
+	}
+	return out;
+}
+
 /**
  * Coerce arbitrary JSON (disk file, network body) into a valid delta record:
  * known fields validated strictly (invalid ones drop/clamp per module doc),
@@ -822,10 +849,7 @@ export function sanitizeUserSettings(raw: unknown): UserSettings | null {
 	}
 	if (r.dictation !== undefined) {
 		const raw = r.dictation;
-		out.dictation = raw !== null && typeof raw === "object" && !Array.isArray(raw) &&
-			isDictationLanguage((raw as Record<string, unknown>).language)
-			? { language: (raw as DictationSettings).language }
-			: {};
+		out.dictation = sanitizeDictation(raw);
 	}
 	if (r.claudeCode !== undefined) {
 		const raw = r.claudeCode;

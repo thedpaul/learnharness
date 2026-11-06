@@ -40,7 +40,8 @@ import { ClaudeCodeInstallationStatus } from "./claude-code-status.tsx";
 import { ProviderMenuList } from "./model-menu.tsx";
 import { MenuShell } from "@/components/menu-shell";
 import { notifySettingsSaved } from "@/components/settings-signal";
-import { DictationLanguageSetting } from "@/components/dictation-language";
+import { DictationEngineSettings, DictationLanguageSetting } from "@/components/dictation-language";
+import { useDictationLanguage } from "@/components/dictation-preference";
 
 /** One pi-ai provider with plain API-key auth (the Platform seam —
  *  derived from pi-ai's own env-key table; no drift possible). */
@@ -375,6 +376,7 @@ export function KeysSection({
 }: {
 	initialRow?: string;
 }) {
+	const dictationEngine = useDictationLanguage().section.engine ?? "deepgram";
 	const [statuses, setStatuses] = useState<AuthKeyStatus[] | null>(null);
 	const [providers, setProviders] = useState<ProviderKeyInfo[] | undefined>(undefined);
 	const [loading, setLoading] = useState(true);
@@ -479,6 +481,11 @@ export function KeysSection({
 	}
 
 	const { providerRows, toolRows, unknownRows, addable } = classifyKeys(statuses, providers);
+	/** The Dictation group shows only the active engine's key (Whisper needs none). */
+	const dictationKey = (id: string) => dictationEngine === "deepgram"
+		? id === "DEEPGRAM_API_KEY"
+		: dictationEngine === "endpoint" && id === "STT_ENDPOINT_API_KEY";
+	const isDictationKey = (id: string) => id === "DEEPGRAM_API_KEY" || id === "STT_ENDPOINT_API_KEY";
 
 	async function saveNewProvider(p: ProviderKeyInfo, value: string) {
 		const err = await saveKey(p.envVar, value);
@@ -580,7 +587,8 @@ export function KeysSection({
 			</SettingsGroup>
 
 			{(["Dictation", "Search"] as const).map((label) => <SettingsGroup key={label} label={label} testid={label === "Dictation" ? "group-dictation" : "group-search"}>
-				{toolRows.filter((status) => label === "Dictation" ? status.id === "DEEPGRAM_API_KEY" : status.id !== "DEEPGRAM_API_KEY").map((status) => (
+				{label === "Dictation" && <DictationEngineSettings />}
+				{toolRows.filter((status) => label === "Dictation" ? dictationKey(status.id) : !isDictationKey(status.id)).map((status) => (
 					<KeyTableRow
 						key={status.id}
 						label={status.info?.label ?? status.id}
@@ -600,14 +608,30 @@ export function KeysSection({
 				))}
 				{label === "Dictation" && <>
 					<DictationLanguageSetting />
-					<p data-testid="dictation-setup-hint" className="px-1 text-[11px] leading-relaxed text-muted-foreground/70">
+					{dictationEngine === "deepgram" && <p data-testid="dictation-setup-hint" className="px-1 text-[11px] leading-relaxed text-muted-foreground/70">
 						Create a <a
 							href="https://console.deepgram.com/"
 							target="_blank"
 							rel="noreferrer"
 							className="underline underline-offset-2 hover:text-foreground"
 						>Deepgram API key</a> with the Member role or higher, then add it above.
-					</p>
+					</p>}
+					{dictationEngine === "whisper" && <p data-testid="dictation-setup-hint" className="px-1 text-[11px] leading-relaxed text-muted-foreground/70">
+						Whisper runs on this device: no key and no account. The model downloads once from Hugging Face, and after that dictation works offline. Pick the language you speak: local Whisper can&apos;t auto-detect, so Multilingual transcribes as English.
+					</p>}
+					{dictationEngine === "endpoint" && <p data-testid="dictation-setup-hint" className="px-1 text-[11px] leading-relaxed text-muted-foreground/70">
+						Any OpenAI-compatible <code>/v1/audio/transcriptions</code> server works, e.g. a local <a
+							href="https://github.com/ggml-org/whisper.cpp/tree/master/examples/server"
+							target="_blank"
+							rel="noreferrer"
+							className="underline underline-offset-2 hover:text-foreground"
+						>whisper.cpp server</a> or <a
+							href="https://speaches.ai/"
+							target="_blank"
+							rel="noreferrer"
+							className="underline underline-offset-2 hover:text-foreground"
+						>speaches</a>. The key is optional.
+					</p>}
 				</>}
 			</SettingsGroup>)}
 
