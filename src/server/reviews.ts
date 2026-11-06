@@ -126,25 +126,32 @@ export function kickReviewChecks(): Promise<void> {
  * The recheck (src/server/fact-check.ts): checked cards too — every card
  * whose last check is older than `before` (all of them without it) is
  * checked again; the newest check wins. `corrections` are the corrected
- * graph facts per session, so cards built on an old fact fail the check.
+ * graph facts per session, so cards built on an old fact fail the check
+ * (a session with corrections has all its cards rechecked).
  */
-export async function recheckCards(opts: { before?: number; corrections?: Map<string, string[]> } = {}): Promise<void> {
+export async function recheckCards(opts: { before?: number; corrections?: Map<string, string[]>; onProgress?: (done: number, total: number) => void } = {}): Promise<void> {
 	const slot = checkerSlot();
 	if (slot.running) await slot.running;
 	const checks = readChecks();
 	await runChecks((c) => {
 		const at = checks.get(c.id)?.at;
-		return !at || opts.before === undefined || Date.parse(at) < opts.before;
-	}, opts.corrections);
+		return !at || opts.before === undefined || Date.parse(at) < opts.before || !!opts.corrections?.has(c.chatId);
+	}, opts.corrections, opts.onProgress);
 	if (slot.lastError) throw new Error(slot.lastError);
 }
 
-function runChecks(select: (card: ReviewCard) => boolean, corrections?: Map<string, string[]>): Promise<void> {
+function runChecks(
+	select: (card: ReviewCard) => boolean,
+	corrections?: Map<string, string[]>,
+	onProgress?: (done: number, total: number) => void,
+): Promise<void> {
 	const slot = checkerSlot();
 	const run = (async () => {
 		try {
 			const todo = allCards().filter(select);
 			if (todo.length === 0) return;
+			let done = 0;
+			onProgress?.(done, todo.length);
 			const engine = checker === checkCards ? auditorEngine() : undefined;
 			const byChat = new Map<string, ReviewCard[]>();
 			for (const c of todo) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
@@ -161,6 +168,8 @@ function runChecks(select: (card: ReviewCard) => boolean, corrections?: Map<stri
 						fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
 						emit("reviews-changed", {});
 					}
+					done += batch.length;
+					onProgress?.(done, todo.length);
 				}
 			}
 			slot.lastError = undefined;

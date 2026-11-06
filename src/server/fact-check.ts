@@ -28,6 +28,9 @@ import { stores } from "./stores.ts";
 const FACT_CHECKS = () => path.join(PATHS.graph, "fact-checks.jsonl");
 /** A checked fact (and card) is checked again after this. */
 export const RECHECK_WINDOW_MS = 30 * 86_400_000;
+/** A forced run still skips what was checked this recently, so a run cut
+ *  short (app closed, update installed) resumes instead of starting over. */
+const RESUME_MS = 60 * 60_000;
 const BATCH = 15;
 
 export type FactCheckLine = { node: string; at: string; verdict: FactCheckResult["verdict"]; reason?: string };
@@ -78,11 +81,11 @@ export function setFactChecker(fn: Checker | null): void {
 
 const changed = () => emit("recheck-changed", {});
 
-/** Run the recheck: `force` = everything now; otherwise only past the window. */
+/** Run the recheck: `force` = everything not checked in the last hour; otherwise only past the window. */
 export function runRecheck(opts: { force?: boolean } = {}): Promise<void> {
 	const s = slot();
 	if (s.running) return s.running;
-	const before = opts.force ? undefined : Date.now() - RECHECK_WINDOW_MS;
+	const before = Date.now() - (opts.force ? RESUME_MS : RECHECK_WINDOW_MS);
 	const status = s.status;
 	const run = (async () => {
 		const corrected: NonNullable<RecheckStatus["last"]>["corrected"] = [];
@@ -143,7 +146,14 @@ export function runRecheck(opts: { force?: boolean } = {}): Promise<void> {
 			}
 			Object.assign(status, { phase: "cards", done: 0, total: 0 });
 			changed();
-			await recheckCards({ before, corrections });
+			await recheckCards({
+				before,
+				corrections,
+				onProgress: (done, total) => {
+					Object.assign(status, { done, total });
+					changed();
+				},
+			});
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
