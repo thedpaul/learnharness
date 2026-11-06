@@ -602,3 +602,9 @@ body {
 	outline: 1px solid var(--border);
 	border-radius: 0.25rem;
 }
+
+/* Inline math with the punctuation touching it never splits across lines
+   (components/math-punctuation.ts). */
+.lh-math-glue {
+	white-space: nowrap;
+}
