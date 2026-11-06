@@ -1,14 +1,16 @@
 "use client";
 
 /**
- * Settings → Sync: Google Drive sync of the learning progress (sessions,
- * graph, jobs) and settings — src/server/sync. The user brings their own
- * Google OAuth "Desktop app" client (Google requires an app identity);
- * the steps are inline so the section works without any docs site.
+ * Settings → Sync (src/server/sync). Phone sync is the visible flow: the
+ * computer turns on Phone sync and shows a QR code; the phone scans it once
+ * and from then on syncs over the Wi-Fi (lan.ts). The Google Drive flow
+ * below (GoogleSync: the user brings their own OAuth "Desktop app" client)
+ * stays in the tree behind GOOGLE_SYNC_ENABLED.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SettingsGroup, SettingsRow, Toggle } from "./controls.tsx";
 import { requestSync, type SyncStatusView } from "@/components/sync-agent";
+import { GOOGLE_SYNC_ENABLED } from "@/src/core";
 
 const inputClass = "h-7 w-full min-w-0 rounded-sm border border-border bg-background px-2 font-ui text-xs text-foreground outline-none placeholder:text-muted-foreground/60";
 const buttonClass = "rounded-sm border border-border px-2.5 py-1 font-ui text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-50";
@@ -30,7 +32,7 @@ function when(iso: string | null): string {
 	return d.toLocaleString();
 }
 
-export function SyncSection() {
+function GoogleSync() {
 	const [status, setStatus] = useState<SyncStatusView | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -172,5 +174,271 @@ export function SyncSection() {
 			)}
 			{error && <p className="text-xs text-red-500" role="alert" data-testid="sync-error">{error}</p>}
 		</>
+	);
+}
+
+// ─── phone sync ─────────────────────────────────────────────────────────────
+
+const FIREWALL_HINT = "sudo firewall-cmd --permanent --add-port=47321/tcp && sudo firewall-cmd --reload";
+
+export function SyncSection() {
+	const [status, setStatus] = useState<SyncStatusView | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [otherWay, setOtherWay] = useState(false);
+
+	const refresh = useCallback(async () => {
+		try {
+			const res = await fetch("/api/sync", { cache: "no-store" });
+			if (res.ok) setStatus((await res.json()) as SyncStatusView);
+		} catch { /* keep the last view */ }
+	}, []);
+	useEffect(() => {
+		void refresh();
+	}, [refresh]);
+	// While the code shows, watch for the phone's first sync.
+	const hubOn = status?.lan.hub.on ?? false;
+	useEffect(() => {
+		if (!hubOn) return;
+		const timer = setInterval(() => void refresh(), 4000);
+		return () => clearInterval(timer);
+	}, [hubOn, refresh]);
+
+	const act = async (body: Record<string, unknown>) => {
+		setBusy(true);
+		setError(null);
+		try {
+			setStatus(await post(body));
+			return true;
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Something went wrong");
+			void refresh();
+			return false;
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	if (!status) return <p className="text-xs text-muted-foreground">Loading…</p>;
+	const phone = status.lan.platform === "android";
+	const showHub = !phone || otherWay;
+	const showPair = phone || otherWay || status.lan.client.paired;
+	return (
+		<>
+			<p className="text-xs leading-relaxed text-muted-foreground">
+				Keeps your sessions, knowledge graph, reviews and settings the same on your computer and your phone,
+				directly over your Wi-Fi: nothing goes through the cloud. API keys and device settings (dictation,
+				Claude Code, file access) stay on each device.
+			</p>
+			{showHub && <HubGroup status={status} busy={busy} act={act} />}
+			{showPair && <PairGroup status={status} busy={busy} act={act} setStatus={setStatus} setError={setError} />}
+			{!otherWay && !status.lan.client.paired && (
+				<button type="button" className="self-start font-ui text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+					onClick={() => setOtherWay(true)} data-testid="sync-other-way">
+					{phone ? "Use this device as the hub instead" : "Pair this computer with another computer instead"}
+				</button>
+			)}
+			{error && <p className="text-xs text-red-500" role="alert" data-testid="sync-error">{error}</p>}
+			{GOOGLE_SYNC_ENABLED && <GoogleSync />}
+		</>
+	);
+}
+
+type Act = (body: Record<string, unknown>) => Promise<boolean>;
+
+function HubGroup({ status, busy, act }: { status: SyncStatusView; busy: boolean; act: Act }) {
+	const hub = status.lan.hub;
+	const [showFirewall, setShowFirewall] = useState(false);
+	return (
+		<SettingsGroup label="This computer" testid="sync-hub">
+			<SettingsRow label="Phone sync" hint="Lets your phone sync with this computer while both are on the same Wi-Fi">
+				<Toggle checked={hub.on} disabled={busy} label="Phone sync" onChange={(on) => void act({ action: "hub", on })} />
+			</SettingsRow>
+			{hub.on && hub.qrSvg && (
+				<div className="flex flex-col items-center gap-3 py-2" data-testid="sync-qr">
+					{/* The SVG comes from this app's own server (the qrcode package). */}
+					<div className="size-48 rounded-md bg-white p-2 [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: hub.qrSvg }} />
+					<p className="max-w-xs text-center text-xs leading-relaxed text-muted-foreground">
+						On your phone, open LearnHarness → Settings → Sync → <b>Scan code</b>.
+					</p>
+					<p className="font-mono text-[0.7rem] text-muted-foreground" data-testid="sync-hub-address">
+						{hub.addresses[0]}:{hub.port}
+						{hub.lastPeer ? ` · last sync: ${hub.lastPeer.device}, ${when(hub.lastPeer.at)}` : " · waiting for your phone…"}
+					</p>
+				</div>
+			)}
+			{hub.on && hub.error && <p className="text-xs text-red-500" data-testid="sync-hub-error">{hub.error}</p>}
+			{hub.on && (
+				<SettingsRow label="New code" hint="Phones paired with the current code have to scan again">
+					<button type="button" className={buttonClass} disabled={busy} onClick={() => void act({ action: "hub-renew" })} data-testid="sync-hub-renew">
+						New code
+					</button>
+				</SettingsRow>
+			)}
+			{hub.on && (
+				<p className="text-xs leading-relaxed text-muted-foreground">
+					Phone can&apos;t connect?{" "}
+					<button type="button" className={linkClass} onClick={() => setShowFirewall((v) => !v)}>Allow it through the firewall</button>
+					{showFirewall && (
+						<>
+							: this computer&apos;s firewall may block port {hub.port}. On Fedora or Bazzite, run in a terminal:
+							<code className="mt-1 block select-all rounded-sm bg-muted px-2 py-1 font-mono text-[0.7rem]">{FIREWALL_HINT}</code>
+						</>
+					)}
+				</p>
+			)}
+		</SettingsGroup>
+	);
+}
+
+function PairGroup({ status, busy, act, setStatus, setError }: {
+	status: SyncStatusView;
+	busy: boolean;
+	act: Act;
+	setStatus: (s: SyncStatusView) => void;
+	setError: (e: string | null) => void;
+}) {
+	const client = status.lan.client;
+	const [scanning, setScanning] = useState(false);
+	const [pasting, setPasting] = useState(false);
+	const [code, setCode] = useState("");
+	const [syncing, setSyncing] = useState(false);
+
+	const pair = async (text: string) => {
+		setScanning(false);
+		if (await act({ action: "pair", code: text })) {
+			setPasting(false);
+			setCode("");
+		}
+	};
+	const syncNow = async () => {
+		setSyncing(true);
+		setError(null);
+		try {
+			setStatus(await requestSync());
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Sync failed");
+		} finally {
+			setSyncing(false);
+		}
+	};
+
+	if (client.paired) {
+		const running = syncing || status.running;
+		return (
+			<SettingsGroup label="Synced with a computer" testid="sync-paired">
+				<SettingsRow label={client.hubName ?? "Computer"} hint="Paired">
+					<button type="button" className={buttonClass} disabled={busy} onClick={() => void act({ action: "unpair" })} data-testid="sync-unpair">
+						Unpair
+					</button>
+				</SettingsRow>
+				<SettingsRow label="Sync automatically" hint="When the app opens, every minute while open, and when you leave it">
+					<Toggle checked={client.auto} label="Sync automatically" onChange={(on) => void act({ action: "lan-auto", on })} />
+				</SettingsRow>
+				<SettingsRow label="Last sync" hint={running ? "Syncing…" : when(client.lastSync)}>
+					<button type="button" className={buttonClass} disabled={busy || running} onClick={() => void syncNow()} data-testid="sync-now">
+						Sync now
+					</button>
+				</SettingsRow>
+				{client.lastError && !running && <p className="text-xs text-red-500" data-testid="sync-last-error">Last sync failed: {client.lastError}</p>}
+			</SettingsGroup>
+		);
+	}
+	return (
+		<SettingsGroup label="Pair with your computer" testid="sync-pair">
+			<p className="text-xs leading-relaxed text-muted-foreground">
+				On your computer, open LearnHarness → Settings → Sync and turn on <b>Phone sync</b>. Then scan the code it shows.
+			</p>
+			{scanning ? (
+				<QrScanner onCode={(text) => void pair(text)} onCancel={() => setScanning(false)} onPaste={() => { setScanning(false); setPasting(true); }} />
+			) : (
+				<div className="flex gap-2">
+					<button type="button" className={buttonClass} disabled={busy} onClick={() => { setError(null); setScanning(true); }} data-testid="sync-scan">
+						{busy ? "Pairing…" : "Scan code"}
+					</button>
+					{!pasting && (
+						<button type="button" className={buttonClass} disabled={busy} onClick={() => setPasting(true)} data-testid="sync-paste-open">
+							Paste code instead
+						</button>
+					)}
+				</div>
+			)}
+			{pasting && (
+				<div className="flex gap-2">
+					<input className={inputClass} placeholder="lhsync:1:…" aria-label="Pairing code" value={code}
+						onChange={(e) => setCode(e.target.value)} data-testid="sync-code" autoComplete="off" spellCheck={false} />
+					<button type="button" className={buttonClass} disabled={busy || !code.trim()} onClick={() => void pair(code)} data-testid="sync-pair-button">
+						Pair
+					</button>
+				</div>
+			)}
+		</SettingsGroup>
+	);
+}
+
+type Detector = { detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>> };
+type DetectorCtor = new (options: { formats: string[] }) => Detector;
+
+/** The camera and the browser's BarcodeDetector; a paste field otherwise. */
+function QrScanner({ onCode, onCancel, onPaste }: { onCode: (text: string) => void; onCancel: () => void; onPaste: () => void }) {
+	const video = useRef<HTMLVideoElement>(null);
+	const [problem, setProblem] = useState<string | null>(null);
+
+	useEffect(() => {
+		const Ctor = (globalThis as unknown as { BarcodeDetector?: DetectorCtor }).BarcodeDetector;
+		if (!Ctor) {
+			setProblem("This device can't read QR codes here. Paste the code instead.");
+			return;
+		}
+		let stream: MediaStream | null = null;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let stopped = false;
+		const detector = new Ctor({ formats: ["qr_code"] });
+		const scan = async () => {
+			if (stopped) return;
+			const v = video.current;
+			if (v && v.readyState >= 2) {
+				try {
+					const hit = (await detector.detect(v)).find((c) => c.rawValue.startsWith("lhsync:"));
+					if (hit && !stopped) {
+						stopped = true;
+						onCode(hit.rawValue);
+						return;
+					}
+				} catch { /* a frame it couldn't read */ }
+			}
+			timer = setTimeout(() => void scan(), 200);
+		};
+		navigator.mediaDevices
+			?.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+			.then((s) => {
+				if (stopped) { s.getTracks().forEach((t) => t.stop()); return; }
+				stream = s;
+				if (video.current) {
+					video.current.srcObject = s;
+					void video.current.play().catch(() => undefined);
+				}
+				void scan();
+			})
+			.catch(() => setProblem("No camera access. Allow the camera for LearnHarness, or paste the code instead."));
+		return () => {
+			stopped = true;
+			clearTimeout(timer);
+			stream?.getTracks().forEach((t) => t.stop());
+		};
+	}, [onCode]);
+
+	return (
+		<div className="flex flex-col items-center gap-2" data-testid="sync-scanner">
+			{problem ? (
+				<p className="text-xs text-red-500">{problem}</p>
+			) : (
+				<video ref={video} muted playsInline className="aspect-square w-full max-w-64 rounded-md bg-black object-cover" />
+			)}
+			<div className="flex gap-2">
+				<button type="button" className={buttonClass} onClick={onCancel}>Cancel</button>
+				<button type="button" className={buttonClass} onClick={onPaste}>Paste code instead</button>
+			</div>
+		</div>
 	);
 }

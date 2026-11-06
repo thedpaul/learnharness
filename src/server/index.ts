@@ -59,5 +59,6 @@ export {
 	MAX_DICTATION_PCM_BYTES, loadWhisper, transcribeWithEndpoint, transcribeWithWhisper,
 } from "./transcribe.ts";
 export {
-	beginSignIn, configureSync, finishSignIn, setAutoSync, signOut, syncNow, syncStatus, type SyncStatus,
+	beginSignIn, configureSync, finishSignIn, pairWith, renewHubSecret, setAutoSync, setHub, setLanAuto, signOut, syncNow, syncStatus, unpair,
+	type LanStatus, type SyncStatus,
 } from "./sync/index.ts";
