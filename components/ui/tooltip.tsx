@@ -31,14 +31,52 @@ function TooltipProvider({
   )
 }
 
+/** A tap is not a hover: touch browsers follow a tap with compat mouse
+ *  events and focus, which Radix reads as a hover/focus open — the label
+ *  (with its desktop shortcut) flashed under the finger and every tap paid
+ *  for a popper mount. Opens within this window of a touch are ignored;
+ *  mouse hover and keyboard focus open as before. */
+export const TOUCH_SUPPRESS_MS = 1000
+
+let lastTouchAt = -Infinity
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.pointerType === "touch") lastTouchAt = performance.now()
+    },
+    { capture: true, passive: true }
+  )
+}
+
+/** True while a touch is recent enough that an open came from it. */
+export function openedByTouch(now = performance.now()): boolean {
+  return now - lastTouchAt < TOUCH_SUPPRESS_MS
+}
+
 function Tooltip({
   disableHoverableContent = true,
+  open: openProp,
+  defaultOpen = false,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  const [ownOpen, setOwnOpen] = React.useState(defaultOpen)
+  const open = openProp ?? ownOpen
+  const change = React.useCallback(
+    (next: boolean) => {
+      if (next && openedByTouch()) return
+      if (openProp === undefined) setOwnOpen(next)
+      onOpenChange?.(next)
+    },
+    [openProp, onOpenChange]
+  )
   return (
     <TooltipPrimitive.Root
       data-slot="tooltip"
       disableHoverableContent={disableHoverableContent}
+      open={open}
+      onOpenChange={change}
       {...props}
     />
   )
