@@ -239,7 +239,7 @@ edit("components/sidebar.tsx", [[
 	`const IS_ELECTRON = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");`,
 	`const IS_ELECTRON = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
 const IS_ANDROID = typeof navigator !== "undefined" && navigator.userAgent.includes("LearnHarnessAndroid");
-const isPhone = () => IS_ANDROID && window.innerWidth < 768;`,
+const isPhone = () => IS_ANDROID && (window.innerWidth < 768 || window.innerHeight < 500);`,
 ], [
 	`	const [mounted, setMounted] = useState(false);
 `,
@@ -381,12 +381,12 @@ import { AndroidTitleMarquee } from "@/components/android-title-marquee";`,
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android phone layout (android/overlay/apply.mjs) */
 .lh-sidebar-backdrop { display: none; }
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 500px) {
 	html.lh-android aside.lh-sidebar { position: fixed; top: 0; bottom: 0; left: 0; z-index: 50; }
 	html.lh-android .lh-sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 49; background: rgb(0 0 0 / 0.5); }
 }
 html.lh-android, html.lh-android body { overflow-x: hidden; }
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 500px) {
 	/* Settings: full-screen sheet, the section nav becomes a scrolling tab row. */
 	html.lh-android .settings-dialog-pop { animation: none; width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
 	html.lh-android .settings-dialog-pop > div:has(> [data-testid="settings-nav"]) { flex-direction: column; }
@@ -529,7 +529,7 @@ fs.appendFileSync(path.join(root, "app/globals.css"), `
 html.lh-android *, html.lh-android *::before, html.lh-android *::after { backdrop-filter: none !important; }
 html.lh-android .bg-card\\/80, html.lh-android .bg-card\\/85, html.lh-android .bg-card\\/95 { background-color: var(--card); }
 html.lh-android .bg-background\\/80, html.lh-android .bg-background\\/85 { background-color: var(--background); }
-@media (max-width: 767px) {
+@media (max-width: 767px), (max-height: 500px) {
 	html.lh-android [data-testid="plan-marginalia"] { display: none; }
 	html.lh-android aside.lh-sidebar {
 		width: 18rem !important; transform: translateX(0); will-change: transform;
@@ -553,3 +553,21 @@ html.lh-android div:has(> div > button[aria-label="Zoom in"]) { justify-content:
 html.lh-android div:has(> div > button[aria-label="Zoom in"]) > span { display: none; }
 `);
 console.log("[overlay] app/globals.css (diagram controls)");
+
+// Landscape (a phone on its side is ~350px tall): a slimmer header, a short
+// fade above the dock, and a tighter dock so the reading keeps most of the
+// height. The status bar is hidden in landscape by MainActivity.
+fs.appendFileSync(path.join(root, "app/globals.css"), `
+@media (max-height: 500px) {
+	html.lh-android header.h-15 { height: 2.75rem; }
+	html.lh-android .h-24.bg-gradient-to-t { height: 1.5rem; }
+	html.lh-android [data-testid="reading-thinking-field"] { margin-bottom: 0.25rem; padding-block: 0.25rem; }
+	html.lh-android [data-testid="reading-thinking-field"] > :first-child { display: none; }
+}
+/* Landscape is wide enough for the graph chrome on one row. */
+@media (max-height: 500px) and (min-width: 768px) {
+	html.lh-android .lh-wco-floating > div:first-child { flex-wrap: nowrap; }
+	html.lh-android .lh-wco-floating > div:first-child > div:has(input[aria-label="Search nodes"]) { order: 0; flex-basis: auto; width: auto; }
+}
+`);
+console.log("[overlay] app/globals.css (landscape)");

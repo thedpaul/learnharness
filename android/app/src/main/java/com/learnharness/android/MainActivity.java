@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -138,6 +139,8 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 			return WindowInsets.CONSUMED;
 		});
 
+		applyOrientationChrome();
+
 		if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
 			requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 7);
 		}
@@ -196,6 +199,25 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 			pendingWebFiles.onReceiveValue(result);
 			pendingWebFiles = null;
 		}
+	}
+
+	/** Landscape is short: hide the status bar there (a swipe from the edge
+	 *  shows it for a moment). Portrait keeps it. */
+	private void applyOrientationChrome() {
+		if (Build.VERSION.SDK_INT < 30) return;
+		android.view.WindowInsetsController c = getWindow().getInsetsController();
+		if (c == null) return;
+		if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+			c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+			c.hide(WindowInsets.Type.statusBars());
+		} else {
+			c.show(WindowInsets.Type.statusBars());
+		}
+	}
+
+	@Override public void onConfigurationChanged(Configuration config) {
+		super.onConfigurationChanged(config);
+		applyOrientationChrome();
 	}
 
 	@Override public void onBackPressed() {
