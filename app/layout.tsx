@@ -10,6 +10,7 @@ import UpdateBanner from "@/components/update-banner";
 import { SyncAgent } from "@/components/sync-agent";
 import { ReviewReminder } from "@/components/review-reminder";
 import { TitleMarquee } from "@/components/title-marquee";
+import { AppSelectMenus } from "@/components/app-select-menus";
 
 // Chrome = JetBrains Mono, teaching prose = Source Sans 3, titles = CMU
 // Serif (the bundled lh-cmu @font-face in globals.css — no CDN).
@@ -44,6 +45,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 			<UpdateBanner />
 			{/* Google Drive sync: start, every minute, and on leaving (sync-agent.tsx). */}
 			<SyncAgent />
+			{/* Native selects open the app's dropdown, not the system picker. */}
+			<AppSelectMenus />
 		</body>
 		</html>
 	);
