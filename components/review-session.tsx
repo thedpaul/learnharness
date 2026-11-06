@@ -18,7 +18,9 @@ import { GlyphMark } from "@/components/ui/glyph-mark";
 import { PillSelect } from "@/components/ui/pill-select";
 import { cn } from "@/lib/utils";
 import { useServerEvent } from "@/components/server-events";
-import { CONFIDENCE_STOPS, DEFAULT_CONFIDENCE_INDEX, seededRandom, streakDays, type Calibration } from "@/src/core";
+import { CONFIDENCE_STOPS, DEFAULT_CONFIDENCE_INDEX, nextReviewTime, remindersPaused, seededRandom, streakDays, type Calibration, type ReviewSettings } from "@/src/core";
+import { REVIEW_SETTINGS_EVENT } from "@/components/review-reminder";
+import { Toggle } from "@/components/settings/controls";
 
 type Question = {
 	id: string;
@@ -41,6 +43,9 @@ type Status = {
 	held: Held[];
 	topics: Topic[];
 	queue: Question[];
+	dueAll: number;
+	doneToday: number;
+	settings: ReviewSettings;
 	calibration: Calibration;
 	activity: string[];
 };
@@ -125,6 +130,7 @@ export function ReviewSession() {
 	const card = status?.queue[i];
 	const streak = status ? streakDays(status.activity, new Date(), new Date().getTimezoneOffset()) : 0;
 	const allDue = status?.topics.reduce((n, t) => n + t.due, 0) ?? 0;
+	const limitHit = !!status && status.settings.maxPerDay > 0 && status.due === 0 && status.dueAll > 0;
 
 	return (
 		<div className="flex h-dvh min-w-0 flex-1 flex-col">
@@ -185,9 +191,13 @@ export function ReviewSession() {
 					)}
 					{status && !card && (
 						<div className="flex flex-col items-center gap-2 py-6 text-center" data-testid="review-empty">
-							<p className="font-title text-2xl">{done.total > 0 ? "Done for now" : status.total === 0 ? "No reviews yet" : "All caught up"}</p>
+							<p className="font-title text-2xl">
+								{limitHit ? "Daily limit reached" : done.total > 0 ? "Done for now" : status.total === 0 ? "No reviews yet" : "All caught up"}
+							</p>
 							<p className="max-w-sm text-sm text-muted-foreground">
-								{done.total > 0
+								{limitHit
+									? `${status.doneToday} reviewed today, your limit. ${status.dueAll} more ${status.dueAll === 1 ? "is" : "are"} due; they wait for tomorrow.`
+									: done.total > 0
 									? `${done.right} of ${done.total} right this round. Each question comes back just before you'd forget it.`
 									: status.total === 0
 										? "Every check you answer in a teaching session becomes a review card. Start a session and they'll show up here."
@@ -239,6 +249,13 @@ export function ReviewSession() {
 							<CalibrationChart data={status.calibration} />
 						</section>
 					)}
+					{status && (
+						<ReviewScheduleSettings
+							settings={status.settings}
+							doneToday={status.doneToday}
+							onSaved={() => void load(topic ?? "")}
+						/>
+					)}
 					{status && status.total > 0 && (
 						<ResetReviews
 							topicTitle={topic ? status.topics.find((t) => t.id === topic)?.title : undefined}
@@ -258,6 +275,140 @@ export function ReviewSession() {
 				</div>
 			</div>
 		</div>
+	);
+}
+
+const LIMITS = [0, 10, 20, 30, 50, 100];
+const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
+const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];
+
+const PAUSES = [1, 3, 7, 14, 30];
+
+function scheduleLine(schedule: ReviewSettings["schedule"], from: Date): string {
+	if (!schedule || schedule.days.length === 0) return "No days picked.";
+	const days = schedule.days.length === 7 ? "Every day" : schedule.days.length === 5 && !schedule.days.includes(0) && !schedule.days.includes(6) ? "Weekdays" : schedule.days.map((d) => DAY_NAMES[d]).join(", ");
+	const next = nextReviewTime(schedule, from);
+	const day = next && (next.toDateString() === from.toDateString() ? "today" : next.toLocaleDateString(undefined, { weekday: "short" }));
+	return `${days} at ${schedule.time}${next ? ` · next ${day} ${schedule.time}` : ""}`;
+}
+
+/** Daily limit and reminder schedule (settings.json → reviews; review-reminder.tsx notifies). */
+function ReviewScheduleSettings({ settings, doneToday, onSaved }: { settings: ReviewSettings; doneToday: number; onSaved: () => void }) {
+	const [draft, setDraft] = useState(settings);
+	const [error, setError] = useState<string | null>(null);
+	useEffect(() => setDraft(settings), [settings]);
+	const save = async (next: ReviewSettings) => {
+		setDraft(next);
+		setError(null);
+		try {
+			const res = await fetch("/api/settings/reviews", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
+			if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't save");
+			window.dispatchEvent(new Event(REVIEW_SETTINGS_EVENT));
+			onSaved();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Couldn't save");
+		}
+	};
+	const schedule = draft.schedule ?? { days: [1, 2, 3, 4, 5], time: "18:00" };
+	const setNotify = async (on: boolean) => {
+		// Desktop: ask for the system permission once, when turned on.
+		if (on && typeof Notification !== "undefined" && Notification.permission === "default") await Notification.requestPermission().catch(() => {});
+		void save({ ...draft, notify: on, schedule });
+	};
+	const paused = remindersPaused(draft, new Date());
+	const blocked = draft.notify && typeof Notification !== "undefined" && Notification.permission === "denied" && !("LHAndroidReminders" in window);
+	return (
+		<section className="flex flex-col gap-3 border-t border-border pt-6 text-xs text-muted-foreground" data-testid="review-schedule">
+			<h2 className="font-ui text-xs font-medium uppercase tracking-wide">Schedule</h2>
+			<div className="flex flex-wrap items-center gap-2">
+				<span className="min-w-28 font-ui text-sm text-foreground">Cards a day</span>
+				<PillSelect
+					value={String(draft.maxPerDay)}
+					onChange={(v) => void save({ ...draft, maxPerDay: Number(v) })}
+					ariaLabel="Cards a day"
+					testid="review-limit"
+					className="w-36"
+					menuWidth="w-36"
+					options={LIMITS.map((n) => ({ value: String(n), label: n ? String(n) : "No limit" }))}
+				/>
+				{draft.maxPerDay > 0 && <span>{Math.min(doneToday, draft.maxPerDay)} of {draft.maxPerDay} done today</span>}
+			</div>
+			<div className="flex flex-wrap items-center gap-2">
+				<span className="min-w-28 font-ui text-sm text-foreground">Remind me</span>
+				<Toggle checked={draft.notify} label="review reminders" onChange={(on) => void setNotify(on)} />
+			</div>
+			{draft.notify && (
+				<>
+					<div className="flex flex-wrap items-center gap-1.5" data-testid="review-days">
+						{DAYS.map((d, i) => {
+							const on = schedule.days.includes(i);
+							return (
+								<button
+									key={i}
+									type="button"
+									aria-label={DAY_NAMES[i]}
+									aria-pressed={on}
+									onClick={() => void save({ ...draft, schedule: { ...schedule, days: on ? schedule.days.filter((x) => x !== i) : [...schedule.days, i].sort() } })}
+									className={cn(
+										"size-8 rounded-full border font-ui text-sm shadow-lg transition-colors",
+										on ? "border-foreground/40 bg-foreground text-background" : "bg-card/85 text-card-foreground hover:bg-muted",
+									)}
+								>
+									{d}
+								</button>
+							);
+						})}
+						<input
+							type="time"
+							value={schedule.time}
+							aria-label="Reminder time"
+							data-testid="review-time"
+							onChange={(e) => {
+								if (/^\d\d:\d\d$/.test(e.target.value)) void save({ ...draft, schedule: { ...schedule, time: e.target.value } });
+							}}
+							className="ml-1 rounded-full border bg-card/85 px-3 py-1 font-ui text-sm text-card-foreground shadow-lg outline-none dark:[color-scheme:dark]"
+						/>
+					</div>
+					<p>
+						{scheduleLine(schedule, paused ? new Date(draft.pausedUntil!) : new Date())}. You get a notification when cards are ready
+						{draft.maxPerDay > 0 ? " (within your daily limit)" : ""}.
+					</p>
+					<div className="flex flex-wrap items-center gap-2" data-testid="review-pause">
+						{paused ? (
+							<>
+								<span className="font-ui text-sm text-foreground">
+									Paused until{" "}
+									{new Date(draft.pausedUntil!).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+								</span>
+								<button
+									type="button"
+									data-testid="review-resume"
+									onClick={() => void save({ ...draft, schedule, pausedUntil: null })}
+									className="rounded-full border bg-card/85 px-3 py-1 font-ui text-sm text-card-foreground shadow-lg backdrop-blur transition-colors hover:bg-muted"
+								>
+									Resume
+								</button>
+							</>
+						) : (
+							<>
+								<span className="min-w-28 font-ui text-sm text-foreground">Pause for</span>
+								<PillSelect
+									value=""
+									onChange={(v) => void save({ ...draft, schedule, pausedUntil: new Date(Date.now() + Number(v) * 86_400_000).toISOString() })}
+									ariaLabel="Pause reminders"
+									testid="review-pause-span"
+									className="w-36"
+									menuWidth="w-36"
+									options={[{ value: "", label: "Not paused" }, ...PAUSES.map((n) => ({ value: String(n), label: n === 1 ? "1 day" : `${n} days` }))]}
+								/>
+							</>
+						)}
+					</div>
+					{blocked && <p className="text-destructive">Notifications are blocked for LearnHarness in your system settings.</p>}
+				</>
+			)}
+			{error && <p className="text-destructive">{error}</p>}
+		</section>
 	);
 }
 

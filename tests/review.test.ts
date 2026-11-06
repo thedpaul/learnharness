@@ -163,3 +163,29 @@ test("checks: newest current-version line wins; checkedCard adds context and fil
 	assert.equal(c.context, "Given `x = 2`.");
 	assert.deepEqual(c.options.map((o) => o.note), ["own", "n2"]);
 });
+
+test("review settings: parse, schedule times, pause, today's count", async () => {
+	const { parseReviewSettings, reviewSettingsOf, nextReviewTime, lastReviewTime, remindersPaused, reviewsToday, DEFAULT_REVIEW_SETTINGS } = await import("../src/core/review.ts");
+	assert.deepEqual(reviewSettingsOf(null), DEFAULT_REVIEW_SETTINGS);
+	assert.equal(parseReviewSettings({ maxPerDay: -1 }), null);
+	assert.equal(parseReviewSettings({ schedule: { days: [7], time: "09:00" } }), null);
+	assert.equal(parseReviewSettings({ schedule: { days: [1], time: "9:00" } }), null);
+	const s = parseReviewSettings({ maxPerDay: 20, schedule: { days: [5, 1, 1], time: "18:30" }, notify: true })!;
+	assert.deepEqual(s.schedule, { days: [1, 5], time: "18:30" });
+
+	// Local time: Wednesday 2026-11-04 12:00 → Friday 18:30; last slot Monday 18:30.
+	const wed = new Date(2026, 10, 4, 12, 0);
+	const next = nextReviewTime(s.schedule, wed)!;
+	assert.deepEqual([next.getDay(), next.getHours(), next.getMinutes()], [5, 18, 30]);
+	const last = lastReviewTime(s.schedule, wed)!;
+	assert.deepEqual([last.getDay(), last.getDate()], [1, 2]);
+	assert.equal(nextReviewTime(null, wed), null);
+
+	const paused = { ...s, pausedUntil: new Date(2026, 10, 10).toISOString() };
+	assert.equal(remindersPaused(paused, wed), true);
+	assert.equal(remindersPaused(paused, new Date(2026, 10, 11)), false);
+	assert.equal(parseReviewSettings({ pausedUntil: "soon" }), null);
+
+	const at = (h: number, d = 4) => new Date(2026, 10, d, h).toISOString();
+	assert.equal(reviewsToday([{ card: "a", at: at(1), correct: true }, { card: "b", at: at(11), correct: false }, { card: "c", at: at(23, 3), correct: true }], wed), 2);
+});
