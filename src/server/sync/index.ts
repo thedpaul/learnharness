@@ -64,17 +64,21 @@ export function setAutoSync(on: boolean): void {
 export function syncNow(): Promise<SyncResult> {
 	const slot = runningSlot();
 	if (slot.current) return slot.current;
-	const run = (async () => {
-		if (lanPaired()) return lanSyncOnce();
-		if (!GOOGLE_SYNC_ENABLED) throw new Error("Pair with a computer first");
+	const run = (async (): Promise<SyncResult> => {
+		await null; // the slot is set before any path can settle
 		try {
-			const result = await runSync(PATHS.data, driveRemote);
-			writeCredentials({ lastSync: new Date().toISOString(), lastError: undefined });
-			announce(result);
-			return result;
-		} catch (err) {
-			writeCredentials({ lastError: err instanceof Error ? err.message : String(err) });
-			throw err;
+			// Phone sync records its own status (lan.ts).
+			if (lanPaired()) return await lanSyncOnce();
+			if (!GOOGLE_SYNC_ENABLED) throw new Error("Pair with a computer first");
+			try {
+				const result = await runSync(PATHS.data, driveRemote);
+				writeCredentials({ lastSync: new Date().toISOString(), lastError: undefined });
+				announce(result);
+				return result;
+			} catch (err) {
+				writeCredentials({ lastError: err instanceof Error ? err.message : String(err) });
+				throw err;
+			}
 		} finally {
 			slot.current = undefined;
 		}
