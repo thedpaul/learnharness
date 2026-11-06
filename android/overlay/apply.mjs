@@ -370,11 +370,13 @@ const noSubscribe = () => () => {};`,
 edit("app/layout.tsx", [[
 	`import { SyncAgent } from "@/components/sync-agent";`,
 	`import { SyncAgent } from "@/components/sync-agent";
-import { AndroidDockScroll } from "@/components/android-dock-scroll";`,
+import { AndroidDockScroll } from "@/components/android-dock-scroll";
+import { AndroidTitleMarquee } from "@/components/android-title-marquee";`,
 ], [
 	`			<SyncAgent />`,
 	`			<SyncAgent />
-			<AndroidDockScroll />`,
+			<AndroidDockScroll />
+			<AndroidTitleMarquee />`,
 ]]);
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android phone layout (android/overlay/apply.mjs) */
@@ -427,3 +429,67 @@ html.lh-android .lh-dictate-error {
 }
 `);
 console.log("[overlay] app/globals.css (android phone layout)");
+
+// The dock fold (quiz card ↔ slim bar): on a phone the card covers most of
+// the screen, so the desktop's 120ms height morph snapped ~1500px in a
+// frame or two. Scale the morph with the distance travelled and lengthen
+// the content fade to match.
+edit("components/chat.tsx", [[
+	`			{ duration: 160, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+		);
+	}, [expanded]);`,
+	`			{ duration: 260, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+		);
+	}, [expanded]);`,
+], [
+	`			el.animate([{ height: \`\${p.height}px\` }, { height: \`\${h}px\` }], {
+				duration: 120,
+				easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+			});`,
+	`			el.animate([{ height: \`\${p.height}px\` }, { height: \`\${h}px\` }], {
+				duration: Math.min(380, 140 + Math.abs(p.height - h) * 0.15),
+				easing: "cubic-bezier(0.3, 0, 0, 1)",
+			});`,
+]]);
+
+// Session title: the text gets its own span so a long title can slide
+// through (overlay/files/components/android-title-marquee.tsx).
+edit("components/chat.tsx", [[
+	`							{titleText}
+							</button>`,
+	`							<span className="lh-title-text">{titleText}</span>
+							</button>`,
+]]);
+fs.appendFileSync(path.join(root, "app/globals.css"), `
+/* Android: a long session title slides through; renaming floats the field
+   over the top of the screen at a readable size. */
+html.lh-android header button.font-title.lh-marquee {
+	text-overflow: clip;
+	mask-image: linear-gradient(to right, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
+}
+html.lh-android header button.font-title > .lh-title-text { display: inline-block; white-space: nowrap; }
+html.lh-android header button.font-title.lh-marquee > .lh-title-text {
+	animation: lh-marquee var(--lh-marquee-time, 8s) ease-in-out infinite;
+}
+@keyframes lh-marquee {
+	0%, 18% { transform: translateX(0); }
+	50%, 68% { transform: translateX(var(--lh-marquee-dist, 0px)); }
+	100% { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+	html.lh-android header button.font-title.lh-marquee > .lh-title-text { animation: none; }
+	html.lh-android header button.font-title.lh-marquee { text-overflow: ellipsis; }
+}
+html.lh-android input[aria-label="Session title"] {
+	position: fixed; z-index: 60; top: 0.75rem; left: 0.75rem; right: 0.75rem;
+	width: auto; max-width: none; min-width: 0;
+	field-sizing: fixed; font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+	font-size: 1.125rem; line-height: 1.75rem; letter-spacing: normal;
+	padding: 0.75rem 1rem; border-radius: 0.75rem;
+	background: var(--card); border: 1px solid var(--border);
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.35), 0 0 0 100vmax rgb(0 0 0 / 0.45);
+	animation: lh-float-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes lh-float-in { from { opacity: 0; transform: translateY(-6px); } }
+`);
+console.log("[overlay] app/globals.css (title marquee, floating rename)");
