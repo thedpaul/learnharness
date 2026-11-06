@@ -1906,6 +1906,50 @@ export function revealArrival(wasQuestion: boolean): { expanded: boolean; reveal
  * after-paint effect painted one stale-open frame first (the box "opened
  * and immediately closed" when scrolled up). Pure for tests.
  */
+/**
+ * Whether the teacher's last message (its last prose block) is on screen:
+ * any part of it between the transcript's top and the composer's top edge. Recomputed on scroll, resize
+ * and content growth (a streaming reply), one frame at a time.
+ */
+function useLastAssistantInView(scrollRef: React.RefObject<HTMLElement | null>, dockRef: React.RefObject<HTMLElement | null>): boolean {
+	const [inView, setInView] = useState(true);
+	useEffect(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		let raf = 0;
+		const measure = () => {
+			raf = 0;
+			// A teaching session renders as one assistant message whose parts
+			// stack inside it: the target is the last prose block (not a
+			// question card), i.e. what the teacher said last.
+			const all = el.querySelectorAll(".is-assistant");
+			const message = all[all.length - 1];
+			const blocks = message?.firstElementChild ? [...message.firstElementChild.children] : [];
+			const last = blocks.reverse().find((b) => b.querySelector(".lh-prose") && !b.querySelector("[data-testid=answered-card]")) ?? message;
+			if (!last) return setInView(true);
+			const box = el.getBoundingClientRect();
+			const bottom = Math.min(box.bottom, dockRef.current?.getBoundingClientRect().top ?? box.bottom);
+			const r = last.getBoundingClientRect();
+			setInView(r.bottom > box.top && r.top < bottom);
+		};
+		const schedule = () => {
+			if (!raf) raf = requestAnimationFrame(measure);
+		};
+		measure();
+		el.addEventListener("scroll", schedule, { passive: true });
+		window.addEventListener("resize", schedule);
+		const ro = new ResizeObserver(schedule);
+		if (el.firstElementChild) ro.observe(el.firstElementChild);
+		return () => {
+			cancelAnimationFrame(raf);
+			el.removeEventListener("scroll", schedule);
+			window.removeEventListener("resize", schedule);
+			ro.disconnect();
+		};
+	}, [scrollRef, dockRef]);
+	return inView;
+}
+
 export function probeArrivalExpanded(isAtBottom: boolean): boolean {
 	return isAtBottom;
 }
@@ -2082,6 +2126,11 @@ function DockOverlay({
 	const viewportRef = useRef<HTMLDivElement>(null);
 	const bodyRef = useRef<HTMLDivElement>(null);
 	const shellRef = useRef<HTMLDivElement>(null);
+	// The reading-thinking field shows only while the teacher's LAST message
+	// is on screen (scrolled up into older history, it hides; text already
+	// written keeps it). Measured to the composer's top: the field above it
+	// comes and goes without moving that edge, so it cannot flicker.
+	const lastMessageInView = useLastAssistantInView(scrollRef, shellRef);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const mode = pending
 		? `question:${pending.key}`
@@ -2366,7 +2415,7 @@ function DockOverlay({
 					    teach-phase check waits — the same cue that collapses it. It
 					    claims dictated speech until the learner reveals the check
 					    (the dock reclaims then). Rides the check answer on submit. */}
-					{pending && requiresReveal && (
+					{pending && requiresReveal && (lastMessageInView || readingThinking.trim() !== "") && (
 						<ReadingThinkingField
 							value={readingThinking}
 							revision={readingThinkingRevision}
