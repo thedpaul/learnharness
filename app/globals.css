@@ -488,6 +488,19 @@ body {
 	}
 }
 
+/* The fact recheck's progress bar before its count is known (fact-recheck.tsx). */
+@keyframes lh-recheck-slide {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(300%);
+	}
+}
+.lh-recheck-indeterminate {
+	animation: lh-recheck-slide 1.2s ease-in-out infinite;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    Electron merged chrome (owner, 2026-09-17). The system title bar is
    hidden (macOS hiddenInset; Windows/Linux hidden + native controls

@@ -77,7 +77,7 @@ import { MenuShell } from "@/components/menu-shell.tsx";
 import { DeleteNodeDialog } from "@/components/delete-node-dialog.tsx";
 import { ChainTableOverlay } from "@/components/chain-table.tsx";
 import { Hint } from "@/components/ui/hint";
-import { FactRecheckButton, FactRecheckResult, useFactRecheck } from "@/components/fact-recheck";
+import { FactRecheckButton, FactRecheckProgress, FactRecheckResult, useFactRecheck } from "@/components/fact-recheck";
 import {
 	ARROW_LENGTH_LADDER,
 	CHARGE_RANGE,
@@ -1598,6 +1598,7 @@ export function GraphView({
 
 			<NotesImportErrors errors={notesImport.errors} />
 			<NotesImportNotices notices={notesImport.notices} />
+			{factRecheck.status?.running && <FactRecheckProgress status={factRecheck.status} />}
 			{factRecheck.result && <FactRecheckResult result={factRecheck.result} onDismiss={factRecheck.dismiss} />}
 			{/* Top-right tail (owner, 2026-09-20): the pipeline cost number —
 			    just a number, hover-highlighted, dropdown breakdown — then
