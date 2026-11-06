@@ -90,3 +90,4 @@ export * from "./coverage.ts";
 // export share it. Pure, browser-safe.
 export * from "./session-markdown.ts";
 export { GOOGLE_SYNC_ENABLED, SYNC_ENABLED } from "./sync-flag.ts";
+export * from "./review.ts";

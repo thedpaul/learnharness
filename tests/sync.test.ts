@@ -43,7 +43,7 @@ test("settings merge: both changed the same key → the newer side wins", () => 
 });
 
 test("synced paths: progress and settings only", () => {
-	for (const p of ["settings.json", "chats/chat_a.json", "jobs/job_1.json", "graph/nodes.jsonl", "graph/positions.json"]) assert.ok(isSyncedPath(p), p);
+	for (const p of ["settings.json", "reviews.jsonl", "chats/chat_a.json", "jobs/job_1.json", "graph/nodes.jsonl", "graph/positions.json"]) assert.ok(isSyncedPath(p), p);
 	for (const p of ["models/x/y.onnx", ".sync/state.json", "debug/a.jsonl", "chats/../auth.json", "chats/sub/a.json"]) assert.ok(!isSyncedPath(p), p);
 });
 
@@ -189,4 +189,21 @@ test("engine: a second sync with no changes does nothing", async () => {
 	await runSync(a, remote);
 	const r = await runSync(a, remote);
 	assert.deepEqual([r.uploaded, r.downloaded, r.merged, r.deleted, r.changedLocal.length], [0, 0, 0, 0, 0]);
+});
+
+test("engine: review history from both devices combines", async () => {
+	const remote = new MemoryRemote();
+	const desktop = device();
+	const phone = device();
+	put(desktop, "reviews.jsonl", '{"card":"a","at":"1","correct":true}\n');
+	await runSync(desktop, remote);
+	await runSync(phone, remote);
+	put(phone, "reviews.jsonl", '{"card":"a","at":"1","correct":true}\n{"card":"b","at":"2","correct":false}\n');
+	put(desktop, "reviews.jsonl", '{"card":"a","at":"1","correct":true}\n{"card":"c","at":"3","correct":true}\n');
+	await runSync(phone, remote);
+	await runSync(desktop, remote);
+	await runSync(phone, remote);
+	const lines = (dir: string) => get(dir, "reviews.jsonl")!.trim().split("\n").sort();
+	assert.deepEqual(lines(desktop), lines(phone));
+	assert.equal(lines(desktop).length, 3);
 });

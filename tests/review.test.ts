@@ -1,0 +1,131 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+	calibration,
+	dueCards,
+	extractReviewCards,
+	parseReviewLedger,
+	REVIEW_BOX_DAYS,
+	scheduleCard,
+	streakDays,
+	type ReviewCard,
+} from "../src/core/review.ts";
+
+const answer = (over: Record<string, unknown> = {}) => ({
+	kind: "quiz",
+	tool: "quiz",
+	questionText: "2 + 2?",
+	options: [
+		{ index: 1, label: "3" },
+		{ index: 2, label: "4" },
+	],
+	dontKnow: false,
+	answers: [{ label: "4", value: "b", index: 2 }],
+	correctIndices: [2],
+	explanation: "Count.",
+	correct: true,
+	confidence: 80,
+	answeredAt: "2030-01-01T10:00:00.000Z",
+	...over,
+});
+
+const transcript = (details: unknown, toolCallId = "call_1") => [
+	{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: "quiz", arguments: { nodeId: "add" } }] },
+	{ role: "toolResult", toolCallId, toolName: "quiz", details },
+];
+
+test("cards: one per graded quiz answer, with the plan node and the session answer", () => {
+	const [card, ...rest] = extractReviewCards("chat_a", "Arithmetic", transcript(answer()));
+	assert.equal(rest.length, 0);
+	assert.equal(card!.id, "chat_a:call_1");
+	assert.equal(card!.nodeId, "add");
+	assert.deepEqual(card!.correctIndices, [2]);
+	assert.deepEqual(card!.firstAnswer, { at: "2030-01-01T10:00:00.000Z", correct: true, confidence: 80 });
+});
+
+test("cards: dismissed, ungraded and non-quiz answers are skipped; I-don't-know has no confidence", () => {
+	assert.equal(extractReviewCards("c", "t", transcript(answer({ dismissed: true }))).length, 0);
+	assert.equal(extractReviewCards("c", "t", transcript(answer({ correctIndices: [] }))).length, 0);
+	assert.equal(extractReviewCards("c", "t", transcript(answer({ kind: "explain" }))).length, 0);
+	const [idk] = extractReviewCards("c", "t", transcript(answer({ dontKnow: true, correct: false, confidence: 50 })));
+	assert.equal(idk!.firstAnswer.confidence, undefined);
+	assert.equal(idk!.firstAnswer.correct, false);
+});
+
+const card = (first: Partial<ReviewCard["firstAnswer"]> = {}): ReviewCard => ({
+	id: "c:1",
+	chatId: "c",
+	chatTitle: "t",
+	questionText: "q",
+	options: [],
+	correctIndices: [1],
+	firstAnswer: { at: "2030-01-01T00:00:00.000Z", correct: true, confidence: 90, ...first },
+});
+const days = (n: number) => new Date(Date.parse("2030-01-01T00:00:00.000Z") + n * 86_400_000);
+
+test("schedule: correct answers climb the boxes, a wrong one starts over", () => {
+	const c = card();
+	assert.equal(scheduleCard(c, [], days(0)).box, 0);
+	assert.equal(scheduleCard(c, [], days(0)).dueAt, days(REVIEW_BOX_DAYS[0]).toISOString());
+	assert.equal(scheduleCard(c, [], days(1)).due, true);
+	const events = [
+		{ card: "c:1", at: days(1).toISOString(), correct: true, confidence: 90 },
+		{ card: "c:1", at: days(4).toISOString(), correct: true, confidence: 90 },
+	];
+	const s = scheduleCard(c, events, days(5));
+	assert.equal(s.box, 2);
+	assert.equal(s.dueAt, days(4 + REVIEW_BOX_DAYS[2]).toISOString());
+	assert.equal(s.due, false);
+	assert.equal(s.reviews, 2);
+	const wrong = scheduleCard(c, [...events, { card: "c:1", at: days(11).toISOString(), correct: false, confidence: 90 }], days(11));
+	assert.equal(wrong.box, 0);
+	assert.equal(wrong.dueAt, days(12).toISOString());
+});
+
+test("schedule: right but unsure halves the interval; other cards' events are ignored", () => {
+	const s = scheduleCard(card({ confidence: 30 }), [{ card: "other", at: days(9).toISOString(), correct: false }], days(0));
+	assert.equal(s.dueAt, days(0.5).toISOString());
+	assert.equal(s.lastAt, days(0).toISOString());
+});
+
+test("due cards: only the due ones, most overdue first", () => {
+	const a = { ...card(), id: "a" };
+	const b = { ...card({ at: days(-5).toISOString() }), id: "b" };
+	const c = { ...card({ at: days(30).toISOString() }), id: "c" };
+	assert.deepEqual(dueCards([a, b, c], [], days(2)).map((x) => x.id), ["b", "a"]);
+});
+
+test("calibration: bins, Brier score and bias", () => {
+	const cal = calibration([
+		{ at: "x", correct: true, confidence: 90 },
+		{ at: "x", correct: false, confidence: 90 },
+		{ at: "x", correct: true, confidence: 52 },
+		{ at: "x", correct: false }, // I don't know: not rated
+	]);
+	assert.equal(cal.count, 3);
+	assert.deepEqual(cal.bins, [
+		{ confidence: 50, count: 1, accuracy: 1 },
+		{ confidence: 90, count: 2, accuracy: 0.5 },
+	]);
+	assert.ok(Math.abs(cal.brier! - (0.01 + 0.81 + 0.2304) / 3) < 1e-9);
+	assert.ok(Math.abs(cal.bias! - ((90 + 90 + 52) / 3 - 200 / 3)) < 1e-9);
+	assert.deepEqual(calibration([]), { bins: [], count: 0, brier: null, bias: null });
+});
+
+test("streak: consecutive local days, today optional", () => {
+	const now = new Date("2030-01-10T12:00:00.000Z");
+	const t = (d: string) => `${d}T12:00:00.000Z`;
+	assert.equal(streakDays([t("2030-01-10"), t("2030-01-09"), t("2030-01-08"), t("2030-01-06")], now, 0), 3);
+	assert.equal(streakDays([t("2030-01-09"), t("2030-01-08")], now, 0), 2);
+	assert.equal(streakDays([t("2030-01-07")], now, 0), 0);
+	// 23:30 UTC on the 9th is already the 10th at UTC+1 (offset -60).
+	assert.equal(streakDays(["2030-01-09T23:30:00.000Z"], now, -60), 1);
+});
+
+test("ledger: valid lines parse, torn lines are skipped", () => {
+	const text = '{"card":"a","at":"t","correct":true,"confidence":70}\n{"card":"b","at"\n\n{"card":"c","at":"t","correct":false}\n';
+	assert.deepEqual(parseReviewLedger(text), [
+		{ card: "a", at: "t", correct: true, confidence: 70 },
+		{ card: "c", at: "t", correct: false, confidence: undefined },
+	]);
+});

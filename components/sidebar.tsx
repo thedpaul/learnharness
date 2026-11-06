@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
-import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, RepeatIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -405,6 +405,18 @@ function SessionsSidebar() {
 		window.localStorage.setItem(KIND_FILTER_KEY, f);
 	}, []);
 	const pathname = usePathname();
+	// Spaced reviews due (src/server/reviews.ts) — refreshed per navigation.
+	const [reviewsDue, setReviewsDue] = useState(0);
+	useEffect(() => {
+		let live = true;
+		fetch("/api/reviews", { cache: "no-store" })
+			.then((r) => r.json())
+			.then((j: { due?: number }) => live && setReviewsDue(j.due ?? 0))
+			.catch(() => {});
+		return () => {
+			live = false;
+		};
+	}, [pathname]);
 	const router = useRouter();
 	const { open: openSettings } = useSettingsDialog();
 
@@ -718,6 +730,23 @@ function SessionsSidebar() {
 						<DumbbellIcon className="size-3" />
 						Practice
 						<span className="sr-only">create a new practice session</span>
+					</button>
+					<button
+						type="button"
+						data-testid="open-reviews"
+						onClick={() => router.push("/review")}
+						className={cn(
+							"flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+							pathname === "/review" && "bg-accent text-foreground",
+						)}
+					>
+						<RepeatIcon className="size-3" />
+						Reviews
+						{reviewsDue > 0 && (
+							<span data-testid="reviews-due" className="ml-auto rounded-full bg-primary/15 px-1.5 font-mono text-[0.65rem] tracking-normal text-primary">
+								{reviewsDue}
+							</span>
+						)}
 					</button>
 				</div>
 
