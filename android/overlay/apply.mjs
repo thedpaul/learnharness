@@ -371,12 +371,14 @@ edit("app/layout.tsx", [[
 	`import { SyncAgent } from "@/components/sync-agent";`,
 	`import { SyncAgent } from "@/components/sync-agent";
 import { AndroidDockScroll } from "@/components/android-dock-scroll";
-import { AndroidTitleMarquee } from "@/components/android-title-marquee";`,
+import { AndroidTitleMarquee } from "@/components/android-title-marquee";
+import { AndroidHandedness } from "@/components/android-handedness";`,
 ], [
 	`			<SyncAgent />`,
 	`			<SyncAgent />
 			<AndroidDockScroll />
-			<AndroidTitleMarquee />`,
+			<AndroidTitleMarquee />
+			<AndroidHandedness />`,
 ]]);
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android phone layout (android/overlay/apply.mjs) */
@@ -571,3 +573,60 @@ fs.appendFileSync(path.join(root, "app/globals.css"), `
 }
 `);
 console.log("[overlay] app/globals.css (landscape)");
+
+// The dock's control row on phones (both orientations): the mic leaves the
+// middle and sits at the row's end under the thumb — right, or left with
+// Settings → Appearance → Mic side (overlay/files/components/android-
+// handedness.tsx). The mode switch drops its icon; the review chip lives in
+// the sidebar's Reviews row in portrait, where the row has no room for it.
+edit("components/settings/appearance-section.tsx", [[
+	`import { playCue, setSoundEffectsEnabled, soundEffectsEnabled } from "@/components/sound-cues";`,
+	`import { playCue, setSoundEffectsEnabled, soundEffectsEnabled } from "@/components/sound-cues";
+import { handedness, setHandedness, type Hand } from "@/components/android-handedness";`,
+], [
+	`	useEffect(() => setSound(soundEffectsEnabled()), []);`,
+	`	useEffect(() => setSound(soundEffectsEnabled()), []);
+	const [micSide, setMicSide] = useState<Hand>("right");
+	useEffect(() => setMicSide(handedness()), []);`,
+], [
+	`			<SettingsRow label="Session names in serif" testid="row-session-serif">`,
+	`			<SettingsRow label="Mic side" hint="Where the dictation mic sits, for your thumb · stored on this device" testid="row-mic-side">
+				<ThinSelect
+					value={micSide}
+					ariaLabel="Mic side"
+					testid="mic-side"
+					onChange={(v) => {
+						setHandedness(v as Hand);
+						setMicSide(v as Hand);
+					}}
+				>
+					<option value="right">Right-handed</option>
+					<option value="left">Left-handed</option>
+				</ThinSelect>
+			</SettingsRow>
+			<SettingsRow label="Session names in serif" testid="row-session-serif">`,
+]]);
+fs.appendFileSync(path.join(root, "app/globals.css"), `
+@media (max-width: 767px), (max-height: 500px) {
+	html.lh-android div:has(> div > [data-testid="dictation-toggle"]),
+	html.lh-android div:has(> div > [data-testid="dictation-bar"]) { justify-content: flex-start; gap: 0.5rem; }
+	html.lh-android div:has(> [data-testid="dictation-toggle"]) { flex: none; order: 9; width: 2.5rem; }
+	html.lh-android div:has(> [data-testid="dictation-bar"]) { order: 9; }
+	html.lh-android.lh-hand-left div:has(> [data-testid="dictation-toggle"]),
+	html.lh-android.lh-hand-left div:has(> [data-testid="dictation-bar"]) { order: -1; }
+	html.lh-android button[data-testid="dictation-toggle"][aria-label="Start dictation"] { height: 2rem; border-radius: 9999px; }
+	html.lh-android button[data-testid="dictation-toggle"][aria-label="Start dictation"] > span { display: none; }
+	html.lh-android [data-testid="model-control"] { margin-left: auto; }
+	html.lh-android [data-testid="home-mode-practice"] svg { display: none; }
+}
+@media (max-width: 767px) {
+	html.lh-android [data-testid="home-reviews-due"] { display: none; }
+}
+@media (max-height: 500px) {
+	html.lh-android .pb-5.inset-x-0.bottom-0 { padding-bottom: 0.5rem; }
+	html.lh-android form.rounded-2xl .lh-input.min-h-10 { min-height: 2rem; padding-block: 0.3rem; }
+	html.lh-android div:has(> div > [data-testid="dictation-toggle"]),
+	html.lh-android div:has(> div > [data-testid="dictation-bar"]) { padding-top: 0.25rem; }
+}
+`);
+console.log("[overlay] app/globals.css (dock row)");
