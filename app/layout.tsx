@@ -7,6 +7,7 @@ import { ActivityProvider } from "@/components/activity-dock";
 import { ServerEventsProvider } from "@/components/server-events";
 import { AppearanceProvider } from "@/components/settings/appearance";
 import UpdateBanner from "@/components/update-banner";
+import { TitleMarquee } from "@/components/title-marquee";
 
 // Chrome = JetBrains Mono, teaching prose = Source Sans 3, titles = CMU
 // Serif (the bundled lh-cmu @font-face in globals.css — no CDN).
@@ -32,6 +33,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 						</ActivityProvider>
 					</SidebarProvider>
 				</AppearanceProvider>
+				{/* Long session titles slide through (title-marquee.tsx). */}
+				<TitleMarquee />
 			</ServerEventsProvider>
 			{/* Auto-update banner (Wave C): fixed card, Electron-only pushes. */}
 			<UpdateBanner />

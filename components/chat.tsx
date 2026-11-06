@@ -1345,7 +1345,7 @@ export function Chat({
 							}}
 							className="lh-no-drag -mx-1.5 min-w-4 shrink cursor-text truncate rounded-md px-1.5 text-left font-title text-3xl tracking-tight transition-colors hover:bg-accent"
 						>
-							{titleText}
+							<span className="lh-title-text">{titleText}</span>
 							</button>
 						</Hint>
 							{/* flex-1 spacer: keeps the chips at the right edge AND stays a
