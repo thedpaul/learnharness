@@ -18,3 +18,11 @@ test("math glue: math with spaces around it, and display math, are left alone", 
 	assert.doesNotMatch(render("so $a$ and $b$ are"), /lh-math-glue/);
 	assert.doesNotMatch(render("$$\nx = 1\n$$\n\n."), /lh-math-glue/);
 });
+
+test("math glue: the formula inside still wraps (only the punctuation joint is held)", async () => {
+	const html = render("so $-(z_y-\\log\\sum_j e^{z_j})=-z_y+\\log\\sum_j e^{z_j}$.");
+	assert.match(html, /class="lh-math-glue"><span class="katex">/, "the formula is a direct child of the glue");
+	const { readFileSync } = await import("node:fs");
+	const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+	assert.match(css, /\.lh-math-glue > \.katex \{\s*white-space: normal;/, "nowrap does not reach into the formula");
+});

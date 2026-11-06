@@ -604,7 +604,12 @@ body {
 }
 
 /* Inline math with the punctuation touching it never splits across lines
-   (components/math-punctuation.ts). */
+   (components/math-punctuation.ts). The formula itself still wraps where
+   KaTeX allows (after = + and the like): nowrap inherited into it kept a
+   long formula on one line, out past its box. */
 .lh-math-glue {
 	white-space: nowrap;
+}
+.lh-math-glue > .katex {
+	white-space: normal;
 }
