@@ -365,6 +365,17 @@ const noSubscribe = () => () => {};`,
 	`onClick={() => { setOpen(false); pickerRef.current?.click(); }}>Files</button>`,
 	`onClick={() => { setOpen(false); if (androidFiles()) void attachAndroidFiles(); else pickerRef.current?.click(); }}>Files</button>`,
 ]]);
+// Phones: a swipe past the question/practice dock's top or bottom carries
+// on into the session history (overlay/files/components/android-dock-scroll.tsx).
+edit("app/layout.tsx", [[
+	`import { SyncAgent } from "@/components/sync-agent";`,
+	`import { SyncAgent } from "@/components/sync-agent";
+import { AndroidDockScroll } from "@/components/android-dock-scroll";`,
+], [
+	`			<SyncAgent />`,
+	`			<SyncAgent />
+			<AndroidDockScroll />`,
+]]);
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android phone layout (android/overlay/apply.mjs) */
 .lh-sidebar-backdrop { display: none; }
@@ -380,6 +391,16 @@ html.lh-android, html.lh-android body { overflow-x: hidden; }
 	html.lh-android [data-testid="settings-nav"] { width: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); scrollbar-width: none; }
 	html.lh-android [data-testid="settings-nav"]::-webkit-scrollbar { display: none; }
 	html.lh-android [data-testid="settings-nav"] > button { flex-shrink: 0; white-space: nowrap; }
+	/* Home graph chrome: the row (search, Chains, Extract files…, graph
+	   settings) is wider than a phone and spilled left over the sidebar
+	   button. Wrap it: search on its own line first (flex order is also
+	   paint order, so the settings panel below stays on top). */
+	html.lh-android .lh-wco-floating > div:first-child { flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
+	html.lh-android .lh-wco-floating > div:first-child > div:has(input[aria-label="Search nodes"]) { order: -1; flex-basis: 100%; width: 100%; }
+	/* Session header: a smaller title, the Plan chip as its icon. */
+	html.lh-android header > button.font-title { font-size: 1.25rem; line-height: 1.75rem; }
+	html.lh-android header:has(> [data-testid="plan-chip"], > [data-testid="phase-chip"]) { gap: 0.5rem; }
+	html.lh-android header > [data-testid="plan-chip"] { font-size: 0; gap: 0; padding: 0.25rem; }
 }
 html.lh-android .lh-dictate-label { display: none; }
 /* Recording: the mic stays centered where it was; the dot and level meter
