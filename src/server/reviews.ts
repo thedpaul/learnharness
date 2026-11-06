@@ -167,6 +167,7 @@ function runChecks(
 						fs.mkdirSync(PATHS.data, { recursive: true });
 						fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
 						emit("reviews-changed", {});
+						if (results.some((r) => r.verdict !== "ok")) emit("changes-changed", {});
 					}
 					done += batch.length;
 					onProgress?.(done, todo.length);
@@ -272,6 +273,15 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; limit?: n
 		calibration: calibration(rated),
 		activity: [...cards.map((c) => c.firstAnswer.at), ...events.map((e) => e.at)],
 	};
+}
+
+/** Cards the check held back (wrong answer key, unclear), with the check
+ *  time — the Changes page and the session notes (changes.ts). */
+export function flaggedCards(): { card: ReviewCard; check: ReviewCheck }[] {
+	const checks = readChecks();
+	return allCards()
+		.filter((c) => checks.has(c.id) && checks.get(c.id)!.verdict !== "ok")
+		.map((c) => ({ card: c, check: checks.get(c.id)! }));
 }
 
 export type ReviewResult = {

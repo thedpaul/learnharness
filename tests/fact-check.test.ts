@@ -78,6 +78,20 @@ test("recheck: false graph facts are corrected, and every card (checked ones too
 	assert.equal(reviewStatus().total, 0);
 	assert.equal(reviewStatus().held.length, 1);
 
+	// Changes: the flagged question (for its session) and the corrected fact, unseen until marked.
+	const { listChanges, markChangesSeen } = await import("../src/server/changes.ts");
+	const all = listChanges();
+	assert.equal(all.unseen, 2);
+	assert.deepEqual(all.items.map((c) => c.kind).sort(), ["card", "fact"]);
+	const fact = all.items.find((c) => c.kind === "fact")!;
+	assert.ok(fact.kind === "fact" && fact.was === "The solar system has nine planets." && fact.statement.includes("eight"));
+	const session = listChanges({ chatId: chat.id });
+	assert.ok(session.items.length === 1 && session.items[0]!.kind === "card" && session.items[0]!.toolCallId === "q1");
+	markChangesSeen([fact.id]);
+	assert.equal(listChanges().unseen, 1);
+	markChangesSeen([fact.id, session.items[0]!.id]);
+	assert.equal(listChanges().unseen, 0);
+
 	// Not forced: everything is inside the window, so nothing is checked again.
 	await runRecheck();
 	assert.equal(factCalls.length, 1);

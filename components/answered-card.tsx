@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { markChangesSeen, type Change } from "@/components/changes";
 import { ConfidenceRail } from "@/components/confidence-rail";
 import { GlyphMark } from "@/components/ui/glyph-mark";
 import { ThinkingBlock } from "@/components/thinking-block";
@@ -20,7 +21,48 @@ import { answerForPresentation, parseAskInput, parseQuizInput } from "@/src/core
  * client — the card reveals his answer, the committed correct answer, and
  * the explanation, with NO verdict chips (owner ruling 2026-09-27).
  */
-export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionAnswerData; input?: unknown }) {
+/** A later check's finding on this question (src/server/changes.ts): shown
+ *  on top of the card, "!" until seen; seen once it has been on screen. */
+function CheckFlag({ flag }: { flag: Extract<Change, { kind: "card" }> }) {
+	const ref = useRef<HTMLDivElement>(null);
+	// The "!" stays for this visit even after the seen mark lands.
+	const [fresh] = useState(!flag.seen);
+	useEffect(() => {
+		if (flag.seen || !ref.current) return;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const io = new IntersectionObserver(([e]) => {
+			if (e?.isIntersecting) timer ??= setTimeout(() => markChangesSeen([flag.id]), 1200);
+			else if (timer) {
+				clearTimeout(timer);
+				timer = undefined;
+			}
+		});
+		io.observe(ref.current);
+		return () => {
+			io.disconnect();
+			if (timer) clearTimeout(timer);
+		};
+	}, [flag.id, flag.seen]);
+	return (
+		<div
+			ref={ref}
+			data-testid="answered-card-flag"
+			className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-card-foreground"
+		>
+			{fresh && (
+				<span aria-label="new" className="flex size-4 shrink-0 items-center justify-center rounded-full bg-amber-500 font-bold text-[0.65rem] text-black">
+					!
+				</span>
+			)}
+			<span>
+				{flag.verdict === "wrong" ? "A later check found this question's marked answer wrong" : "A later check found this question unclear"}
+				{flag.reason ? `: ${flag.reason}` : "."} It's kept out of your reviews.
+			</span>
+		</div>
+	);
+}
+
+export function AnsweredCard({ answer: savedAnswer, input, flag }: { answer: QuestionAnswerData; input?: unknown; flag?: Extract<Change, { kind: "card" }> }) {
 	const answer = answerForPresentation(savedAnswer, input);
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
 	if (answer.dismissed) {
@@ -63,6 +105,7 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 			className="rounded-xl border bg-card p-4 text-card-foreground [&>*:last-child]:mb-0"
 			data-testid="answered-card"
 		>
+			{flag && <CheckFlag flag={flag} />}
 			<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				{/* The tool's OWN name first (owner 2026-10-09): probe-phase
 			    cards label Probe/Recall — the phase boundary visible in the

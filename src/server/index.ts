@@ -47,6 +47,7 @@ export * from "./dismissal-park.ts";
 export * from "./compaction.ts";
 export * from "./reviews.ts";
 export * from "./fact-check.ts";
+export * from "./changes.ts";
 export { runPiTurn, piTurnResponse, type PiTurnHandle, type PiTurnSpec } from "./pi/ui-stream.ts";
 export * from "./observability.ts";
 export * from "./model-catalog.ts";

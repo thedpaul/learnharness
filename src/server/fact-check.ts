@@ -128,6 +128,7 @@ export function runRecheck(opts: { force?: boolean } = {}): Promise<void> {
 							provenance: [],
 							correction: { at, ...(r.reason ? { reason: r.reason } : {}) },
 						});
+						emit("changes-changed", {});
 						corrected.push({ name: r.name, statement: r.statement, ...(r.reason ? { reason: r.reason } : {}) });
 						// Cards are grouped by chat; every chat the node came up in gets the fix.
 						for (const chat of new Set(node.provenance.map((p) => p.chatId))) {
