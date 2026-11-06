@@ -28,6 +28,8 @@ export type CardCheckResult = {
 	context?: string;
 	/** The tutor's explanation rewritten for review; absent when it was fine as is. */
 	explanation?: string;
+	/** The concept the card tests (clusters related cards across topics). */
+	concept?: string;
 	notes: Record<string, string>;
 };
 
@@ -55,6 +57,13 @@ const checkSchema = Type.Object({
 					"('(b)', 'option A', 'the second one'). Keep it short, correct (fix anything wrong) and in LaTeX. " +
 					"Empty string if the tutor's explanation already does all that.",
 			}),
+			concept: Type.String({
+				description:
+					"The one concept this card tests, as a short name (2-5 words, e.g. 'Softmax temperature', " +
+					"'Bayes rule', 'File permissions'): specific enough that cards on it belong together, general " +
+					"enough that other lessons can test it too. Reuse a name from the concepts in use, letter for " +
+					"letter, whenever it is the same idea.",
+			}),
 			notes: Type.Array(
 				Type.Object({
 					option: Type.Integer({ description: "The option number as given." }),
@@ -73,6 +82,7 @@ For every card:
 2. Decide whether it stands on its own. If it leans on the lesson ("the code above", "this example", a variable defined earlier), write the missing piece as context: reproduce the code or formula exactly, state the setup in a sentence or two. Keep it as short as the question allows, and never give away the answer. If even with context it can't be answered fairly, the verdict is "unclear".
 3. Write one short note per option: why it is right, or which misconception picks it.
 4. Check the tutor's explanation as the learner will read it in review, after answering, with the options shuffled. If it names options by letter, number or position, gets something wrong, or writes math outside LaTeX, rewrite it: same reasoning, options named by what they say. If it is already right, leave the explanation empty.
+5. Name the one concept the card tests. Cards from any lesson that test the same idea are reviewed side by side, so when a concept in use is the same idea, give its name exactly.
 
 Use markdown like the cards do, and write every formula, symbol and variable in LaTeX — inline $...$, e.g. $\\sqrt{d_k}$, $x_t = \\sqrt{\\bar\\alpha_t}\\,x_0$, $\\sum_j e^{z_j}$ — in notes, context, explanations and reasons alike. Never Unicode math (√, ∑, ᾱ, ≠, ≤) or bare d_k / x^2: the learner's screen renders LaTeX, and plain underscores turn into italics. Submit every card in one call.`;
 
@@ -96,6 +106,8 @@ export async function checkCards(opts: {
 	/** Facts from this lesson the fact check corrected (src/server/fact-check.ts):
 	 *  a card built on the old version is now wrong. */
 	corrections?: string[];
+	/** Concept names already in use (src/core/review.ts knownConcepts). */
+	concepts?: string[];
 	signal?: AbortSignal;
 	onStep?: (usage: Usage, model: string) => void;
 }): Promise<CardCheckResult[]> {
@@ -103,7 +115,8 @@ export async function checkCards(opts: {
 	const fixes = opts.corrections?.length
 		? `## Corrected since the lesson\nThe lesson taught some of these wrongly; trust these versions:\n${opts.corrections.map((c) => `- ${c}`).join("\n")}\n\n---\n\n`
 		: "";
-	const prompt = `Lesson: ${opts.sessionTitle}\n\n${fixes}${opts.cards.map(cardBlock).join("\n\n---\n\n")}`;
+	const concepts = opts.concepts?.length ? `## Concepts in use\n${opts.concepts.map((c) => `- ${c}`).join("\n")}\n\n---\n\n` : "";
+	const prompt = `Lesson: ${opts.sessionTitle}\n\n${fixes}${concepts}${opts.cards.map(cardBlock).join("\n\n---\n\n")}`;
 	const value = await runSubmitAgent<Static<typeof checkSchema>>({
 		role: "auditor",
 		toolName: "submit_checks",
@@ -130,6 +143,7 @@ export async function checkCards(opts: {
 			...(c.reason?.trim() ? { reason: c.reason.trim() } : {}),
 			...(c.context.trim() ? { context: c.context.trim() } : {}),
 			...(c.explanation.trim() ? { explanation: c.explanation.trim() } : {}),
+			...(c.concept.trim() ? { concept: c.concept.trim() } : {}),
 			notes: Object.fromEntries(c.notes.filter((n) => n.note.trim()).map((n) => [String(n.option), n.note.trim()])),
 		}));
 }

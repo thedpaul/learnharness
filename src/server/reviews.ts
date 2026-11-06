@@ -26,6 +26,8 @@ import {
 	dueCards,
 	extractReviewCards,
 	isCorrect,
+	knownConcepts,
+	clusteredOrder,
 	mixedOrder,
 	parseTopicFields,
 	relatedTopics,
@@ -173,15 +175,16 @@ function runChecks(
 			let done = 0;
 			onProgress?.(done, todo.length);
 			const engine = checker === checkCards ? auditorEngine() : undefined;
+			const concepts = knownConcepts(readChecks().values());
 			const byChat = new Map<string, ReviewCard[]>();
 			for (const c of todo) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
 			for (const [chatId, cards] of byChat) {
 				for (let i = 0; i < cards.length; i += BATCH) {
 					const batch = cards.slice(i, i + BATCH);
-					const results = await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId) });
+					const results = await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId), concepts });
 					const at = new Date().toISOString();
 					const lines = results.map((r) =>
-						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, explanation: r.explanation, notes: r.notes }),
+						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, explanation: r.explanation, concept: r.concept, notes: r.notes }),
 					);
 					if (lines.length) {
 						fs.mkdirSync(PATHS.data, { recursive: true });
@@ -189,6 +192,8 @@ function runChecks(
 						emit("reviews-changed", {});
 						if (results.some((r) => r.verdict !== "ok")) emit("changes-changed", {});
 					}
+					// Later sessions in this run reuse the names just given.
+					for (const r of results) if (r.concept && !concepts.includes(r.concept)) concepts.push(r.concept);
 					done += batch.length;
 					onProgress?.(done, todo.length);
 				}
@@ -347,8 +352,9 @@ export function reviewCounts(now = new Date()): { due: number; total: number; se
 
 /** `topic` narrows the deck to one session; with `mix`, the topics sharing
  *  a field with it join, and the round comes in a mixed order. Without a
- *  topic, `shuffle` puts every due card in one random order. */
-export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boolean; shuffle?: boolean; limit?: number } = {}): ReviewStatus {
+ *  topic, `shuffle` puts every due card in one random order, and with
+ *  `cluster` cards testing the same concept come side by side in it. */
+export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boolean; shuffle?: boolean; cluster?: boolean; limit?: number } = {}): ReviewStatus {
 	const { cards, checks, events, ok, due, settings, doneToday, left } = deck(now);
 	void kickReviewChecks().then(() => kickTopicFields());
 	const fields = readFields();
@@ -363,7 +369,8 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boo
 	const scope = opts.topic ? new Set([opts.topic, ...(opts.mix ? (topics.get(opts.topic)?.related ?? []) : [])]) : null;
 	const inTopic = <T extends { chatId: string }>(list: T[]) => (scope ? list.filter((c) => scope.has(c.chatId)) : list);
 	const mixed = scope ? scope.size > 1 : !!opts.shuffle;
-	const shownDue = mixed ? mixedOrder(inTopic(due), `${opts.topic ?? "all"}:${now.toISOString().slice(0, 10)}:${doneToday}`) : inTopic(due);
+	const seed = `${opts.topic ?? "all"}:${now.toISOString().slice(0, 10)}:${doneToday}`;
+	const shownDue = !mixed ? inTopic(due) : !scope && opts.cluster ? clusteredOrder(due, fields, seed) : mixedOrder(inTopic(due), seed);
 	const shownOk = inTopic(ok);
 	const okIds = new Set(shownOk.map((c) => c.id));
 	const rated = [...shownOk.map((c) => c.firstAnswer), ...events.filter((e) => okIds.has(e.card))];

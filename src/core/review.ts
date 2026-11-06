@@ -39,6 +39,8 @@ export interface ReviewCard {
 	lead?: string;
 	/** From the check: what the question needs to stand on its own. */
 	context?: string;
+	/** From the check: the concept it tests (clusters related cards across topics). */
+	concept?: string;
 }
 
 export interface ReviewAnswer {
@@ -315,7 +317,7 @@ export function parseReviewLedger(text: string): ReviewEvent[] {
  *  check keeps its card in the deck until the re-check replaces it; a
  *  check from a newer build is ignored. v2: notes in LaTeX. v3: the
  *  explanation rewritten for shuffled options. */
-export const REVIEW_CHECK_VERSION = 3;
+export const REVIEW_CHECK_VERSION = 4;
 
 export type ReviewVerdict = "ok" | "wrong" | "unclear";
 
@@ -333,6 +335,8 @@ export interface ReviewCheck {
 	notes?: Record<string, string>;
 	/** The explanation rewritten for review (options shuffled); absent = the tutor's stands. */
 	explanation?: string;
+	/** The concept the card tests, a short name shared across topics (v4+). */
+	concept?: string;
 }
 
 export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
@@ -355,6 +359,7 @@ export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
 				...(typeof c.context === "string" && c.context.trim() ? { context: c.context.trim() } : {}),
 				...(c.notes && typeof c.notes === "object" ? { notes: c.notes } : {}),
 				...(typeof c.explanation === "string" && c.explanation.trim() ? { explanation: c.explanation.trim() } : {}),
+				...(typeof c.concept === "string" && c.concept.trim() ? { concept: c.concept.trim() } : {}),
 			});
 		} catch {
 			/* a torn line: skip */
@@ -377,6 +382,7 @@ export function checkedCard(card: ReviewCard, check: ReviewCheck | undefined): R
 		...card,
 		...(check.context ? { context: check.context } : {}),
 		...(check.explanation ? { explanation: check.explanation } : {}),
+		...(check.concept ? { concept: check.concept } : {}),
 		options: card.options.map((o) => {
 			const note = o.note ?? check.notes?.[String(o.index)];
 			return note ? { ...o, note } : o;
@@ -429,4 +435,36 @@ export function mixedOrder<T>(cards: readonly T[], seed: string): T[] {
 		[out[i], out[j]] = [out[j]!, out[i]!];
 	}
 	return out;
+}
+
+/** The concept names in use, most used first (the checker reuses them so
+ *  cards from different topics land on the same name). */
+export function knownConcepts(checks: Iterable<ReviewCheck>, max = 150): string[] {
+	const counts = new Map<string, { name: string; n: number }>();
+	for (const c of checks) {
+		if (!c.concept) continue;
+		const key = fieldKey(c.concept);
+		const hit = counts.get(key) ?? { name: c.concept, n: 0 };
+		hit.n++;
+		counts.set(key, hit);
+	}
+	return [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).slice(0, max).map((c) => c.name);
+}
+
+/** A shuffled round with related cards side by side: cards testing the same
+ *  concept form one run whatever their topic (a card without a concept yet
+ *  runs with its topic's field, else its topic); the runs come in a random
+ *  order, and so do the cards inside each run. */
+export function clusteredOrder<T extends { chatId: string; concept?: string }>(
+	cards: readonly T[],
+	fields: ReadonlyMap<string, readonly string[]>,
+	seed: string,
+): T[] {
+	const groups = new Map<string, T[]>();
+	for (const c of cards) {
+		const field = fields.get(c.chatId)?.[0];
+		const key = c.concept ? `c:${fieldKey(c.concept)}` : field ? `f:${fieldKey(field)}` : `t:${c.chatId}`;
+		groups.set(key, [...(groups.get(key) ?? []), c]);
+	}
+	return mixedOrder([...groups.entries()], seed).flatMap(([key, run]) => mixedOrder(run, `${seed}:${key}`));
 }
