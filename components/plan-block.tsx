@@ -12,7 +12,7 @@ import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
 // Mermaid's default flowchart edge curve: dagre's waypoints drawn through
 // d3's curveBasis (the exact recipe dagre-d3's own renderer uses).
 import { curveBasis, line } from "d3-shape";
-import { fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
+import { pinchedGraphView, PinchTracker, fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
 import type { PlanBlockData, PlanNodeStatus, PlanTree } from "@/src/core";
 import { derivedNodeStatus, derivePlanStatuses } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
@@ -840,16 +840,36 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 	// per-frame — the transition is off while dragging or it rubber-bands.
 	const [panning, setPanning] = useState(false);
 	const dragRef = useRef<{ px: number; py: number; x: number; y: number; moved: boolean } | null>(null);
+	// Touch screens: a second finger turns the drag into a pinch zoom.
+	const pinchRef = useRef<PinchTracker | null>(null);
+	pinchRef.current ??= new PinchTracker();
 	const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (e.button !== 0) return;
 		if ((e.target as HTMLElement).closest("button")) return;
-		if (atFloor) return;
+		if (pinchRef.current!.down(e)) {
+			dragRef.current = null;
+			setPanning(true);
+			e.currentTarget.setPointerCapture(e.pointerId);
+			return;
+		}
+		if (atFloor) {
+			if (e.pointerType === "touch") e.currentTarget.setPointerCapture(e.pointerId);
+			return;
+		}
 		dragRef.current = { px: e.clientX, py: e.clientY, x: view.x, y: view.y, moved: false };
 		setPanning(true);
 		e.currentTarget.classList.add("cursor-grabbing");
 		e.currentTarget.setPointerCapture(e.pointerId);
 	};
 	const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		const pinch = pinchRef.current!.move(e);
+		if (pinch) {
+			const rect = e.currentTarget.getBoundingClientRect();
+			userAdjustedRef.current = true;
+			setView((v) => pinchedGraphView(v, pinch, fitZoom, rect, box, size));
+			return;
+		}
+		if (pinchRef.current!.pinching) return;
 		const d = dragRef.current;
 		if (!d) return;
 		d.moved = true;
@@ -858,6 +878,7 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 		);
 	};
 	const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		pinchRef.current!.up(e);
 		const d = dragRef.current;
 		if (d) {
 			dragRef.current = null;

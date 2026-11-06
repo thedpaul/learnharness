@@ -53,3 +53,76 @@ export function zoomedGraphView(
 	const k = zoom / view.zoom;
 	return { zoom, x: focus.x - (focus.x - view.x) * k, y: focus.y - (focus.y - view.y) * k };
 }
+
+/** One frame of a two-finger pinch: the scale change since the last frame,
+ *  the fingers' midpoint (client coordinates), and how far it moved. */
+export interface PinchStep {
+	factor: number;
+	mid: { x: number; y: number };
+	dx: number;
+	dy: number;
+}
+
+type PointerLike = { pointerId: number; clientX: number; clientY: number };
+
+/**
+ * Two-finger pinch on a pan/zoom viewport (touch screens). Pointer-based,
+ * so it rides the viewports' existing pointer handlers: feed it every
+ * down/move/up; while it reports a pinch, the one-finger drag stands down.
+ */
+export class PinchTracker {
+	private points = new Map<number, { x: number; y: number }>();
+	private last: { dist: number; mid: { x: number; y: number } } | null = null;
+
+	get pinching(): boolean {
+		return this.last !== null;
+	}
+
+	/** Returns true when this pointer starts (or joins) a pinch. */
+	down(e: PointerLike): boolean {
+		this.points.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (this.points.size < 2) return false;
+		this.last = this.measure();
+		return true;
+	}
+
+	/** The pinch step for this move, or null when not pinching. */
+	move(e: PointerLike): PinchStep | null {
+		if (!this.points.has(e.pointerId)) return null;
+		this.points.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (!this.last) return null;
+		const now = this.measure();
+		const step: PinchStep = {
+			factor: this.last.dist > 0 ? now.dist / this.last.dist : 1,
+			mid: now.mid,
+			dx: now.mid.x - this.last.mid.x,
+			dy: now.mid.y - this.last.mid.y,
+		};
+		this.last = now;
+		return step;
+	}
+
+	up(e: PointerLike): void {
+		this.points.delete(e.pointerId);
+		this.last = this.points.size >= 2 ? this.measure() : null;
+	}
+
+	private measure(): { dist: number; mid: { x: number; y: number } } {
+		const [a, b] = [...this.points.values()];
+		return { dist: Math.hypot(b!.x - a!.x, b!.y - a!.y), mid: { x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 } };
+	}
+}
+
+/** Apply a pinch step: zoom about the fingers' midpoint and pan with it
+ *  (at the fit floor the view stays fitted — nothing to pan). Pure. */
+export function pinchedGraphView(
+	view: Viewport,
+	step: PinchStep,
+	floor: number,
+	origin: { left: number; top: number },
+	box: { w: number; h: number },
+	viewport: { w: number; h: number },
+): Viewport {
+	const next = zoomedGraphView(view, step.factor, floor, { x: step.mid.x - origin.left, y: step.mid.y - origin.top }, box, viewport);
+	return next.zoom <= floor + 1e-9 ? next : { ...next, x: next.x + step.dx, y: next.y + step.dy };
+}

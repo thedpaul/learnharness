@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { MaximizeIcon, MinusIcon, PlusIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
+import { pinchedGraphView, PinchTracker, fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
 import { renderMermaid } from "@/components/mermaid-render";
 import { MermaidError } from "@/components/mermaid-error";
 import { Hint } from "@/components/ui/hint";
@@ -173,16 +173,36 @@ export function MermaidOverlay({
 	}, [fitZoom, box, size]);
 
 	const dragRef = useRef<{ px: number; py: number; x: number; y: number; moved: boolean } | null>(null);
+	// Touch screens: a second finger turns the drag into a pinch zoom.
+	const pinchRef = useRef<PinchTracker | null>(null);
+	pinchRef.current ??= new PinchTracker();
 	const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
 		if (e.button !== 0) return;
 		if ((e.target as HTMLElement).closest("button")) return;
-		if (atFloor) return;
+		if (pinchRef.current!.down(e)) {
+			dragRef.current = null;
+			setPanning(true);
+			e.currentTarget.setPointerCapture(e.pointerId);
+			return;
+		}
+		if (atFloor) {
+			if (e.pointerType === "touch") e.currentTarget.setPointerCapture(e.pointerId);
+			return;
+		}
 		dragRef.current = { px: e.clientX, py: e.clientY, x: view.x, y: view.y, moved: false };
 		setPanning(true);
 		e.currentTarget.classList.add("cursor-grabbing");
 		e.currentTarget.setPointerCapture(e.pointerId);
 	};
 	const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		const pinch = pinchRef.current!.move(e);
+		if (pinch) {
+			const rect = e.currentTarget.getBoundingClientRect();
+			userAdjustedRef.current = true;
+			setView((v) => pinchedGraphView(v, pinch, fitZoom, rect, box, size));
+			return;
+		}
+		if (pinchRef.current!.pinching) return;
 		const d = dragRef.current;
 		if (!d) return;
 		d.moved = true;
@@ -191,6 +211,7 @@ export function MermaidOverlay({
 		);
 	};
 	const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		pinchRef.current!.up(e);
 		const d = dragRef.current;
 		if (d) {
 			dragRef.current = null;
