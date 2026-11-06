@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { markChangesSeen, useChanges, type Change } from "@/components/changes";
 import { TopBar } from "@/components/top-bar";
+import { questionAnchorId } from "@/src/core";
 
 const when = (at: string) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
@@ -72,7 +73,7 @@ export function ChangesView() {
 										<ToolContentResponse>{c.questionText}</ToolContentResponse>
 									</div>
 									{c.reason && <p className="text-xs text-muted-foreground">{c.reason}</p>}
-									<Link href={`/chat/${encodeURIComponent(c.chatId)}`} className="self-start text-xs underline underline-offset-2 hover:text-foreground">
+									<Link href={`/chat/${encodeURIComponent(c.chatId)}#${encodeURIComponent(questionAnchorId(c.toolCallId))}`} className="self-start text-xs underline underline-offset-2 hover:text-foreground">
 										In {c.chatTitle}
 									</Link>
 								</>

@@ -7,6 +7,18 @@ export function messageAnchorId(messageId: string): string {
 	return `message-${messageId}`;
 }
 
+/** A question's anchor (the Changes page links to the flagged card): the
+ *  same "message-" hash family, so SessionMessageNavigation lands on it. */
+export function questionAnchorId(toolCallId: string): string {
+	return messageAnchorId(`q-${toolCallId}`);
+}
+
+/** The question a hash points at (questionAnchorId), or null. */
+export function questionIdFromHash(hash: string): string | null {
+	const id = messageIdFromHash(hash);
+	return id?.startsWith("q-") && id.length > 2 ? id.slice(2) : null;
+}
+
 export function messageIdFromHash(hash: string): string | null {
 	try {
 		const anchor = decodeURIComponent(hash.replace(/^#/, ""));

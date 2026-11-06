@@ -1608,7 +1608,7 @@ export function Chat({
 														// transcript; answered ones render as graded records.
 														if (part.state === "output-available") {
 															return (
-																<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} flag={part.toolCallId ? flagByCall.get(part.toolCallId) : undefined} />
+																<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} flag={part.toolCallId ? flagByCall.get(part.toolCallId) : undefined} toolCallId={part.toolCallId} />
 															);
 														}
 														return null;

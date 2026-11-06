@@ -9,7 +9,7 @@ import { PathText } from "@/components/file-path-chip";
 import { cn } from "@/lib/utils";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import type { QuestionAnswerData } from "@/src/core";
-import { answerForPresentation, parseAskInput, parseQuizInput } from "@/src/core";
+import { answerForPresentation, parseAskInput, parseQuizInput, questionAnchorId } from "@/src/core";
 
 /**
  * Static rendering of an answered question (tool part in `output-available`).
@@ -62,7 +62,13 @@ function CheckFlag({ flag }: { flag: Extract<Change, { kind: "card" }> }) {
 	);
 }
 
-export function AnsweredCard({ answer: savedAnswer, input, flag }: { answer: QuestionAnswerData; input?: unknown; flag?: Extract<Change, { kind: "card" }> }) {
+export function AnsweredCard({ answer: savedAnswer, input, flag, toolCallId }: {
+	answer: QuestionAnswerData;
+	input?: unknown;
+	flag?: Extract<Change, { kind: "card" }>;
+	/** Makes the card a link target (questionAnchorId: the Changes page links here). */
+	toolCallId?: string;
+}) {
 	const answer = answerForPresentation(savedAnswer, input);
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
 	if (answer.dismissed) {
@@ -104,6 +110,7 @@ export function AnsweredCard({ answer: savedAnswer, input, flag }: { answer: Que
 		<div
 			className="rounded-xl border bg-card p-4 text-card-foreground [&>*:last-child]:mb-0"
 			data-testid="answered-card"
+			id={toolCallId ? questionAnchorId(toolCallId) : undefined}
 		>
 			{flag && <CheckFlag flag={flag} />}
 			<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
