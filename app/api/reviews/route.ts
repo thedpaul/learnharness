@@ -1,5 +1,6 @@
 /** Spaced reviews (src/server/reviews.ts): GET the due queue + stats
- *  (?topic=<session id> narrows it, &mix=1 adds the related topics; ?count=1
+ *  (?topic=<session id> narrows it, &mix=1 adds the related topics; without a
+ *  topic ?shuffle=1 mixes every due card in one random order; ?count=1
  *  is the badges' due count only),
  *  POST one answer ({ card, selected: number[], confidence? }), DELETE
  *  ?days=<n>[&topic=] undoes recent reviews (no days = all of them). */
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
 	const params = new URL(request.url).searchParams;
 	if (params.get("count") === "1") return Response.json(reviewCounts());
 	const topic = params.get("topic");
-	return Response.json(reviewStatus(new Date(), topic ? { topic: topic.slice(0, 200), mix: params.get("mix") === "1" } : {}));
+	return Response.json(reviewStatus(new Date(), topic ? { topic: topic.slice(0, 200), mix: params.get("mix") === "1" } : { shuffle: params.get("shuffle") === "1" }));
 }
 
 export async function POST(request: Request) {
