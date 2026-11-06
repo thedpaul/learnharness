@@ -6,6 +6,7 @@ import { useSettingsDialog } from "@/components/settings/settings-dialog";
 import { Hint } from "@/components/ui/hint";
 import { deepgramListenUrl, type DictationLanguage } from "@/src/core";
 import { useDictationLanguage } from "@/components/dictation-preference";
+import { playCue } from "@/components/sound-cues";
 import { setDictationActive } from "@/components/dictation-state";
 export { isDictationActive } from "@/components/dictation-state";
 
@@ -285,6 +286,13 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 	const { getLanguage } = useDictationLanguage();
 	const [phase, setPhase] = useState<DictationPhase>("idle");
 	const [error, setError] = useState<string | null>(null);
+	// Sound cue when the mic actually opens, and when it closes.
+	const wasRecordingRef = useRef(false);
+	useEffect(() => {
+		const recording = phase === "recording";
+		if (recording !== wasRecordingRef.current) playCue(recording ? "mic-on" : "mic-off");
+		wasRecordingRef.current = recording;
+	}, [phase]);
 	/** Latest RMS from the worklet — the meter samples this (dictate pattern). */
 	const levelRef = useRef(0);
 	/** The page's fallback append — kept fresh per render so a mid-recording
