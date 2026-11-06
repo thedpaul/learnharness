@@ -80,3 +80,25 @@ describe("computeMenuPlacement — cap + position", () => {
 		assert.ok(!("right" in p.style));
 	});
 });
+describe("computeMenuPlacement — horizontal fit", () => {
+	// The phone portrait case: the model pill sits near the middle and the
+	// right-aligned menu is wider than the room to its left.
+	const phone = { width: 392, height: 785 };
+	const pill = { top: 650, bottom: 680, left: 230, right: 317 };
+	it("a right-aligned menu wider than the room shifts in to the left edge", () => {
+		const p = computeMenuPlacement(pill, phone, 200, "up", "right", 352);
+		const right = p.style.right as number;
+		assert.equal(phone.width - right - 352, 8, "its left edge lands EDGE inside the viewport");
+		assert.equal(p.style.maxWidth, 392 - 16);
+	});
+	it("a left-aligned menu running past the right edge shifts back", () => {
+		const p = computeMenuPlacement({ ...pill, left: 300, right: 380 }, phone, 200, "down", "left", 200);
+		assert.equal(p.style.left, 392 - 8 - 200);
+	});
+	it("a menu that fits keeps its anchor alignment; one wider than the screen is capped", () => {
+		assert.equal(computeMenuPlacement(pill, phone, 200, "up", "right", 200).style.right, 392 - 317);
+		const wide = computeMenuPlacement(pill, phone, 200, "up", "right", 900);
+		assert.equal(wide.style.right, 8);
+		assert.equal(wide.style.maxWidth, 376);
+	});
+});

@@ -76,6 +76,10 @@ export function computeMenuPlacement(
 	contentHeight: number,
 	preferredSide: MenuSide,
 	align: MenuAlign,
+	/** The menu's width, when measured: it then shifts sideways to stay EDGE
+	 *  inside the viewport (a right-aligned menu wider than the room left of
+	 *  its anchor no longer runs off a phone's left edge). */
+	contentWidth = 0,
 ): MenuPlacement {
 	const availDown = viewport.height - EDGE - (rect.bottom + GAP);
 	const availUp = rect.top - GAP - EDGE;
@@ -91,8 +95,13 @@ export function computeMenuPlacement(
 	}
 	const avail = side === "down" ? availDown : availUp;
 	const maxHeight = Math.max(MIN_USABLE, Math.min(CAP_VH * viewport.height, avail));
+	const room = Math.max(0, viewport.width - 2 * EDGE);
+	const w = Math.min(contentWidth, room);
 	const horizontal: Record<string, number> =
-		align === "right" ? { right: viewport.width - rect.right } : { left: rect.left };
+		align === "right"
+			? { right: w > 0 && rect.right - w < EDGE ? Math.max(EDGE, viewport.width - EDGE - w) : viewport.width - rect.right }
+			: { left: w > 0 && rect.left + w > viewport.width - EDGE ? Math.max(EDGE, viewport.width - EDGE - w) : rect.left };
+	if (w > 0) horizontal.maxWidth = room;
 	const vertical: Record<string, number> =
 		side === "down" ? { top: rect.bottom + GAP } : { bottom: viewport.height - rect.top + GAP };
 	return { side, style: { ...horizontal, ...vertical }, maxHeight };
@@ -209,6 +218,7 @@ export function MenuShell({
 				menuRef.current.scrollHeight,
 				preferredSide,
 				align,
+				menuRef.current.offsetWidth,
 			);
 			setPlaced(p);
 		};
