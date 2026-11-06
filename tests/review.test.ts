@@ -164,6 +164,23 @@ test("checks: newest current-version line wins; checkedCard adds context and fil
 	assert.deepEqual(c.options.map((o) => o.note), ["own", "n2"]);
 });
 
+test("checks: an older version still counts but is stale; a higher version beats a newer older-version line", async () => {
+	const { checkIsStale } = await import("../src/core/review.ts");
+	const text = [
+		JSON.stringify({ card: "a", at: "2030-01-05", v: REVIEW_CHECK_VERSION - 1, verdict: "ok" }),
+		JSON.stringify({ card: "b", at: "2030-01-02", v: REVIEW_CHECK_VERSION, verdict: "ok", notes: { "1": "$\\sqrt{d_k}$" } }),
+		JSON.stringify({ card: "b", at: "2030-01-09", v: REVIEW_CHECK_VERSION - 1, verdict: "wrong" }),
+		JSON.stringify({ card: "c", at: "2030-01-01", verdict: "ok" }),
+	].join("\n");
+	const checks = parseReviewChecks(text);
+	assert.equal(checks.get("a")!.verdict, "ok");
+	assert.equal(checkIsStale(checks.get("a")), true);
+	assert.equal(checks.get("b")!.verdict, "ok", "the current-version check wins over a later older one");
+	assert.equal(checkIsStale(checks.get("b")), false);
+	assert.equal(checks.has("c"), false, "a line without a version is skipped");
+	assert.equal(checkIsStale(undefined), false);
+});
+
 test("review settings: parse, schedule times, pause, today's count", async () => {
 	const { parseReviewSettings, reviewSettingsOf, nextReviewTime, lastReviewTime, remindersPaused, reviewsToday, DEFAULT_REVIEW_SETTINGS } = await import("../src/core/review.ts");
 	assert.deepEqual(reviewSettingsOf(null), DEFAULT_REVIEW_SETTINGS);

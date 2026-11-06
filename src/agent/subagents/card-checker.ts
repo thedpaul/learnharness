@@ -49,7 +49,7 @@ const checkSchema = Type.Object({
 			notes: Type.Array(
 				Type.Object({
 					option: Type.Integer({ description: "The option number as given." }),
-					note: Type.String({ description: "One short line: why this option is right, or the misconception behind it." }),
+					note: Type.String({ description: "One short line: why this option is right, or the misconception behind it. Math in LaTeX ($\\sqrt{d_k}$), never Unicode symbols or bare subscripts." }),
 				}),
 				{ description: "One note for EVERY option." },
 			),
@@ -64,7 +64,7 @@ For every card:
 2. Decide whether it stands on its own. If it leans on the lesson ("the code above", "this example", a variable defined earlier), write the missing piece as context: reproduce the code or formula exactly, state the setup in a sentence or two. Keep it as short as the question allows, and never give away the answer. If even with context it can't be answered fairly, the verdict is "unclear".
 3. Write one short note per option: why it is right, or which misconception picks it.
 
-Use markdown and LaTeX ($...$) like the cards do. Submit every card in one call.`;
+Use markdown like the cards do, and write every formula, symbol and variable in LaTeX — inline $...$, e.g. $\\sqrt{d_k}$, $x_t = \\sqrt{\\bar\\alpha_t}\\,x_0$, $\\sum_j e^{z_j}$ — in notes, context and reasons alike. Never Unicode math (√, ∑, ᾱ, ≠, ≤) or bare d_k / x^2: the learner's screen renders LaTeX, and plain underscores turn into italics. Submit every card in one call.`;
 
 function cardBlock(c: CardToCheck): string {
 	const options = c.options.map((o) => `${o.index}. ${o.label}`).join("\n");

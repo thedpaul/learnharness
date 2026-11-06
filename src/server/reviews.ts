@@ -17,6 +17,7 @@ import { emit } from "../core/events.ts";
 import {
 	calibration,
 	checkedCard,
+	checkIsStale,
 	dueCards,
 	extractReviewCards,
 	isCorrect,
@@ -115,14 +116,20 @@ export function setReviewChecker(fn: Checker | null): void {
 	slot.lastError = undefined;
 }
 
-/** Check every unchecked card, one session batch at a time. Never throws. */
+/** Check every unchecked card, and re-check those an older checker passed,
+ *  one session batch at a time. A paired phone leaves the re-checks to the
+ *  computer (they arrive with the next sync). Never throws. */
 export function kickReviewChecks(): Promise<void> {
 	const slot = checkerSlot();
 	if (slot.running) return slot.running;
 	if (slot.failedAt && Date.now() - slot.failedAt < RETRY_MS) return Promise.resolve();
 	const checks = readChecks();
 	const defer = deferToComputer();
-	return runChecks((c) => !checks.has(c.id) && (!defer || Date.now() - Date.parse(c.firstAnswer.at) > PHONE_DEFER_MS));
+	return runChecks((c) => {
+		const check = checks.get(c.id);
+		if (!check) return !defer || Date.now() - Date.parse(c.firstAnswer.at) > PHONE_DEFER_MS;
+		return !defer && checkIsStale(check);
+	});
 }
 
 /**
