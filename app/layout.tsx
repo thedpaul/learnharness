@@ -7,6 +7,7 @@ import { ActivityProvider } from "@/components/activity-dock";
 import { ServerEventsProvider } from "@/components/server-events";
 import { AppearanceProvider } from "@/components/settings/appearance";
 import UpdateBanner from "@/components/update-banner";
+import { AppSelectMenus } from "@/components/app-select-menus";
 
 // Chrome = JetBrains Mono, teaching prose = Source Sans 3, titles = CMU
 // Serif (the bundled lh-cmu @font-face in globals.css — no CDN).
@@ -35,6 +36,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 			</ServerEventsProvider>
 			{/* Auto-update banner (Wave C): fixed card, Electron-only pushes. */}
 			<UpdateBanner />
+			{/* Native selects open the app's dropdown, not the system picker. */}
+			<AppSelectMenus />
 		</body>
 		</html>
 	);
