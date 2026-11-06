@@ -500,9 +500,17 @@ edit("components/sidebar.tsx", [[
 // drop the blur and fill them in. The sidebar slides on the compositor
 // (transform) instead of animating its width (a layout per frame), and the
 // plan marginalia (never visible at phone width) isn't kept painting.
+// Transcript blocks off screen skip layout and paint (content-visibility):
+// older history rendering in above the reader froze a scroll ~130 ms, nearly
+// all of it laying out and painting blocks nobody could see, and every touch
+// hit-tested the whole transcript. A block keeps its measured height once
+// drawn (the "auto" size), and scroll anchoring holds the view still while
+// estimated blocks above it resolve.
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android fluidity (android/overlay/apply.mjs) */
 html.lh-android *, html.lh-android *::before, html.lh-android *::after { backdrop-filter: none !important; }
+html.lh-android [role="log"] .is-assistant > div > .lh-source-passage { content-visibility: auto; contain-intrinsic-size: auto 900px; }
+html.lh-android [role="log"] .is-assistant > div > .rounded-xl.border.bg-card { content-visibility: auto; contain-intrinsic-size: auto 600px; }
 html.lh-android .bg-card\\/80, html.lh-android .bg-card\\/85, html.lh-android .bg-card\\/95 { background-color: var(--card); }
 html.lh-android .bg-background\\/80, html.lh-android .bg-background\\/85 { background-color: var(--background); }
 @media (max-width: 767px), (max-height: 500px) {
