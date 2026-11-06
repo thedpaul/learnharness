@@ -527,8 +527,8 @@ edit("components/sidebar.tsx", [[
 fs.appendFileSync(path.join(root, "app/globals.css"), `
 /* Android fluidity (android/overlay/apply.mjs) */
 html.lh-android *, html.lh-android *::before, html.lh-android *::after { backdrop-filter: none !important; }
-html.lh-android .bg-card\\/80, html.lh-android .bg-card\\/85, html.lh-android .bg-card\\/95 { background-color: color-mix(in oklab, var(--card) 97%, transparent); }
-html.lh-android .bg-background\\/80, html.lh-android .bg-background\\/85 { background-color: color-mix(in oklab, var(--background) 97%, transparent); }
+html.lh-android .bg-card\\/80, html.lh-android .bg-card\\/85, html.lh-android .bg-card\\/95 { background-color: var(--card); }
+html.lh-android .bg-background\\/80, html.lh-android .bg-background\\/85 { background-color: var(--background); }
 @media (max-width: 767px) {
 	html.lh-android [data-testid="plan-marginalia"] { display: none; }
 	html.lh-android aside.lh-sidebar {
@@ -544,3 +544,12 @@ html.lh-android header button.font-title.lh-marquee > .lh-title-text { animation
 html.lh-android.lh-editing header button.font-title.lh-marquee > .lh-title-text { animation-play-state: paused; }
 `);
 console.log("[overlay] app/globals.css (fluidity)");
+
+// Plan / session diagrams: touch has pinch and drag, so the "Drag to pan ·
+// scroll to zoom" hint and the +/- buttons go; the fit button stays.
+fs.appendFileSync(path.join(root, "app/globals.css"), `
+html.lh-android button[aria-label="Zoom in"], html.lh-android button[aria-label="Zoom out"] { display: none; }
+html.lh-android div:has(> div > button[aria-label="Zoom in"]) { justify-content: flex-end; }
+html.lh-android div:has(> div > button[aria-label="Zoom in"]) > span { display: none; }
+`);
+console.log("[overlay] app/globals.css (diagram controls)");
