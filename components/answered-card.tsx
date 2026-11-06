@@ -8,6 +8,7 @@ import { ThinkingBlock } from "@/components/thinking-block";
 import { PathText } from "@/components/file-path-chip";
 import { cn } from "@/lib/utils";
 import { ToolContentResponse } from "@/components/ai-elements/message";
+import { NoteMarkdown } from "@/components/note-markdown";
 import type { QuestionAnswerData } from "@/src/core";
 import { answerForPresentation, parseAskInput, parseQuizInput, questionAnchorId } from "@/src/core";
 
@@ -54,10 +55,11 @@ function CheckFlag({ flag }: { flag: Extract<Change, { kind: "card" }> }) {
 					!
 				</span>
 			)}
-			<span>
-				{flag.verdict === "wrong" ? "A later check found this question's marked answer wrong" : "A later check found this question unclear"}
-				{flag.reason ? `: ${flag.reason}` : "."} It's kept out of your reviews.
-			</span>
+			<div className="min-w-0 flex-1">
+				<NoteMarkdown>
+					{`${flag.verdict === "wrong" ? "A later check found this question's marked answer wrong" : "A later check found this question unclear"}${flag.reason ? `: ${flag.reason}` : "."} It's kept out of your reviews.`}
+				</NoteMarkdown>
+			</div>
 		</div>
 	);
 }

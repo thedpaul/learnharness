@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalibrationChart } from "@/components/calibration-chart";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
 import { ToolContentResponse } from "@/components/ai-elements/message";
+import { NoteMarkdown } from "@/components/note-markdown";
 import { playCue } from "@/components/sound-cues";
 import { TopBar } from "@/components/top-bar";
 import { GlyphMark } from "@/components/ui/glyph-mark";
@@ -232,8 +233,7 @@ export function ReviewSession() {
 														<ToolContentResponse>{h.questionText}</ToolContentResponse>
 													</div>
 													<div className="mt-1">
-														{h.verdict === "wrong" ? "Wrong answer key" : "Unclear"}
-														{h.reason ? `: ${h.reason}` : ""}
+														<NoteMarkdown>{`${h.verdict === "wrong" ? "Wrong answer key" : "Unclear"}${h.reason ? `: ${h.reason}` : ""}`}</NoteMarkdown>
 													</div>
 												</li>
 											))}
