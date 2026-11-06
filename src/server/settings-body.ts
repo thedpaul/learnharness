@@ -324,6 +324,10 @@ export function parseGraphSettingsBody(body: unknown): SettingsBodyResult<GraphS
 		if (typeof raw.rendering !== "boolean") return { ok: false, error: "rendering must be a boolean" };
 		settings.rendering = raw.rendering;
 	}
+	if (raw.recheckOnStartup !== undefined) {
+		if (typeof raw.recheckOnStartup !== "boolean") return { ok: false, error: "recheckOnStartup must be a boolean" };
+		settings.recheckOnStartup = raw.recheckOnStartup;
+	}
 	if (raw.extractionChunkTokens !== undefined) {
 		if (typeof raw.extractionChunkTokens !== "number" || !Number.isFinite(raw.extractionChunkTokens)) {
 			return { ok: false, error: "extractionChunkTokens must be a number" };

@@ -401,6 +401,13 @@ export function GraphSection({
 					onChange={(on) => onSectionChange({ ...graph, rendering: on })}
 				/>
 			</SettingsRow>
+			<SettingsRow label="Recheck facts on startup" hint="Graph facts and review cards, monthly · cheap slot" testid="graph-row-recheck">
+				<Toggle
+					checked={graph?.recheckOnStartup ?? false}
+					label="recheck facts on startup"
+					onChange={(on) => onSectionChange({ ...graph, recheckOnStartup: on })}
+				/>
+			</SettingsRow>
 			<SettingsRow
 				label="Extraction chunk budget"
 				hint={`${resolved.extractionChunkTokens} tok`}

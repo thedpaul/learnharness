@@ -144,6 +144,11 @@ export interface GraphNode {
 	createdAt: string;
 	/** Every (chat, message) point where this proposition came up. */
 	provenance: ProvenancePoint[];
+	/** Set on a CORRECTION line (the fact check, src/server/fact-check.ts):
+	 *  its name/statement replace the node's, and the false statement leaves
+	 *  the aliases. Only ever appended after the defining line; a
+	 *  correction for an unknown id defines nothing. */
+	correction?: { at: string; reason?: string };
 }
 
 /** sessions.jsonl line — the emission checkpoint for one chat (which chats
@@ -182,7 +187,9 @@ export interface CoverageEntry {
  *                  name/statement/createdAt; later lines for the
  *                  same id are link-appends (a session's re-encounter):
  *                  their statements/aliases join `aliases`, their
- *                  provenance unions; the name stays the first line's.
+ *                  provenance unions; the name stays the first line's
+ *                  (unless a later CORRECTION line replaces name and
+ *                  statement — the fact check's fix for a false node).
  *                  getGraph merges by id.
  *   chains.jsonl   one line per chain ASSERTION; readers merge by
  *                  (premises, conclusion), unioning provenance — the

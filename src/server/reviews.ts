@@ -88,11 +88,18 @@ function checkerSlot(): CheckerSlot {
 	return (g[checkerKey] ??= {});
 }
 
-function auditorEngine() {
+export function auditorEngine() {
 	const spec = resolveRoleSpec("auditor", stores.settingsStore.readSettings());
 	if (!spec) throw new Error("No model is set for background work (Settings → Providers, the cheap slot)");
 	if (!providerKeyPresent(spec.provider)) throw new Error(`${spec.provider} isn't connected (Settings → Providers)`);
 	return piEngineForSpec(spec, true, undefined, () => stores.settingsStore.readSettings()?.models?.cheap?.cacheRetention);
+}
+
+/** The fact recheck's once-per-start hook (fact-check.ts registers it: the
+ *  badges' first count is the app's start, and the import stays one-way). */
+let startupRecheck: (() => void) | undefined;
+export function onFirstCount(fn: () => void): void {
+	startupRecheck = fn;
 }
 
 /** Test seam: a scripted checker replaces the model call. */
@@ -110,19 +117,41 @@ export function kickReviewChecks(): Promise<void> {
 	const slot = checkerSlot();
 	if (slot.running) return slot.running;
 	if (slot.failedAt && Date.now() - slot.failedAt < RETRY_MS) return Promise.resolve();
+	const checks = readChecks();
+	const defer = deferToComputer();
+	return runChecks((c) => !checks.has(c.id) && (!defer || Date.now() - Date.parse(c.firstAnswer.at) > PHONE_DEFER_MS));
+}
+
+/**
+ * The recheck (src/server/fact-check.ts): checked cards too — every card
+ * whose last check is older than `before` (all of them without it) is
+ * checked again; the newest check wins. `corrections` are the corrected
+ * graph facts per session, so cards built on an old fact fail the check.
+ */
+export async function recheckCards(opts: { before?: number; corrections?: Map<string, string[]> } = {}): Promise<void> {
+	const slot = checkerSlot();
+	if (slot.running) await slot.running;
+	const checks = readChecks();
+	await runChecks((c) => {
+		const at = checks.get(c.id)?.at;
+		return !at || opts.before === undefined || Date.parse(at) < opts.before;
+	}, opts.corrections);
+	if (slot.lastError) throw new Error(slot.lastError);
+}
+
+function runChecks(select: (card: ReviewCard) => boolean, corrections?: Map<string, string[]>): Promise<void> {
+	const slot = checkerSlot();
 	const run = (async () => {
 		try {
-			const checks = readChecks();
-			const defer = deferToComputer();
-			const unchecked = allCards().filter((c) => !checks.has(c.id) && (!defer || Date.now() - Date.parse(c.firstAnswer.at) > PHONE_DEFER_MS));
-			if (unchecked.length === 0) return;
+			const todo = allCards().filter(select);
+			if (todo.length === 0) return;
 			const engine = checker === checkCards ? auditorEngine() : undefined;
 			const byChat = new Map<string, ReviewCard[]>();
-			for (const c of unchecked) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
-			for (const cards of byChat.values()) {
+			for (const c of todo) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
+			for (const [chatId, cards] of byChat) {
 				for (let i = 0; i < cards.length; i += BATCH) {
 					const batch = cards.slice(i, i + BATCH);
-					const results = await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine });
+					const results = await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId) });
 					const at = new Date().toISOString();
 					const lines = results.map((r) =>
 						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, notes: r.notes }),
@@ -192,6 +221,7 @@ function deck(now: Date) {
 export function reviewCounts(now = new Date()): { due: number; total: number } {
 	const { ok, due } = deck(now);
 	void kickReviewChecks();
+	startupRecheck?.();
 	return { due: due.length, total: ok.length };
 }
 
