@@ -17,7 +17,9 @@ const seen = new WeakMap<HTMLElement, string>();
 function measure() {
 	for (const text of Array.from(document.querySelectorAll<HTMLElement>(SELECTOR))) {
 		const box = text.parentElement!;
-		const over = text.scrollWidth - box.clientWidth + 12;
+		// A sidebar row's sliding left padding holds the fade, not text (globals.css).
+		const pad = box.classList.contains("lh-row-title") ? parseFloat(getComputedStyle(box).paddingLeft) || 0 : 0;
+		const over = text.scrollWidth - (box.clientWidth - pad) + 12;
 		const on = over > 12;
 		// A new title replays the passes from the start.
 		if (on && seen.get(box) !== text.textContent && box.classList.contains("lh-marquee")) {
