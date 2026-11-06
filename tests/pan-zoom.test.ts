@@ -8,8 +8,8 @@
  */
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
-import { FIT_ZOOM_MAX, ZOOM_MAX, fitGraphView, fitZoomFor, zoomedGraphView } from "../components/pan-zoom.ts";
+import { describe, it, test } from "node:test";
+import { FIT_ZOOM_MAX, PinchTracker, ZOOM_MAX, fitGraphView, fitZoomFor, pinchedGraphView, zoomedGraphView } from "../components/pan-zoom.ts";
 
 describe("fitZoomFor", () => {
 	it("binds on the axis that runs out of room (wide box → width)", () => {
@@ -69,4 +69,31 @@ describe("zoomedGraphView", () => {
 		const out = zoomedGraphView(view, 1, floor, { x: 0, y: 0 }, box, viewport);
 		assert.equal(out, view);
 	});
+});
+
+test("pinch: spreading two fingers zooms in about their midpoint; one finger never pinches", () => {
+	const t = new PinchTracker();
+	assert.equal(t.down({ pointerId: 1, clientX: 100, clientY: 100 }), false);
+	assert.equal(t.move({ pointerId: 1, clientX: 110, clientY: 100 }), null);
+	assert.equal(t.down({ pointerId: 2, clientX: 210, clientY: 100 }), true);
+	const step = t.move({ pointerId: 2, clientX: 310, clientY: 100 })!;
+	assert.ok(Math.abs(step.factor - 2) < 1e-9);
+	assert.deepEqual(step.mid, { x: 210, y: 100 });
+	assert.equal(step.dx, 50);
+	t.up({ pointerId: 2, clientX: 310, clientY: 100 });
+	assert.equal(t.pinching, false);
+	assert.equal(t.move({ pointerId: 1, clientX: 120, clientY: 100 }), null);
+});
+
+test("pinch view: zooms about the midpoint and pans with it; pinching below the fit re-fits", () => {
+	const box = { w: 1000, h: 1000 };
+	const viewport = { w: 400, h: 400 };
+	const floor = 0.384;
+	const view = { zoom: 1, x: 0, y: 0 };
+	const zoomed = pinchedGraphView(view, { factor: 2, mid: { x: 110, y: 120 }, dx: 0, dy: 0 }, floor, { left: 10, top: 20 }, box, viewport);
+	assert.deepEqual(zoomed, { zoom: 2, x: -100, y: -100 }); // focus (100,100) stays put
+	const panned = pinchedGraphView(view, { factor: 1.0000001, mid: { x: 10, y: 20 }, dx: 30, dy: -5 }, floor, { left: 10, top: 20 }, box, viewport);
+	assert.ok(Math.abs(panned.x - 30) < 1e-3 && Math.abs(panned.y + 5) < 1e-3);
+	const out = pinchedGraphView(view, { factor: 0.1, mid: { x: 200, y: 200 }, dx: 40, dy: 40 }, floor, { left: 0, top: 0 }, box, viewport);
+	assert.deepEqual(out, fitGraphView(box, viewport, floor));
 });
