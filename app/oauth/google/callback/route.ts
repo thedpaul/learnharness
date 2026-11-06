@@ -3,7 +3,7 @@
  * sits outside /api on purpose: the user's browser carries no app
  * capability; the one-time `state` from beginSignIn is the authorization.
  */
-import { SYNC_ENABLED } from "@/src/core";
+import { GOOGLE_SYNC_ENABLED } from "@/src/core";
 import { finishSignIn } from "@/src/server";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ function page(title: string, detail: string, status = 200): Response {
 }
 
 export async function GET(request: Request) {
-	if (!SYNC_ENABLED) return page("Sync is switched off", "Google Drive sync isn't available in this version.", 404);
+	if (!GOOGLE_SYNC_ENABLED) return page("Sync is switched off", "Google Drive sync isn't available in this version.", 404);
 	const url = new URL(request.url);
 	const error = url.searchParams.get("error");
 	if (error) return page("Google sign-in was cancelled", "You can close this tab and try again from LearnHarness.", 400);

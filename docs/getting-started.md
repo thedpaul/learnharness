@@ -56,20 +56,26 @@ For lessons, attach material to a session instead. Use the graph's **Extract fil
 
 The graph stores propositions and reasoning chains with source provenance, **not mastery scores**. A proposition's presence is not proof that you understood or retained it. Automatic session extraction can be disabled independently of graph rendering.
 
-<!-- Sync is switched off for now (src/core/sync-flag.ts); restore this section with it.
+## Sync your phone and computer
 
-## Sync across devices
+**Settings → Sync** keeps your sessions, knowledge graph, reviews, finished background jobs and settings the same on your computer and your phone, directly over your Wi-Fi. Nothing goes through the cloud, and there is no account to set up.
 
-**Settings → Sync** keeps your sessions, knowledge graph, finished background jobs and settings the same on every device, through a private LearnHarness folder in your Google Drive (the `drive.appdata` space, which nothing else in your Drive can see).
+1. On the computer, turn on **Phone sync**. A QR code appears.
+2. On the phone, open **Settings → Sync** and tap **Scan code**, then point the camera at the QR code.
 
-Google requires an app identity, so you bring your own OAuth client once: create a Google Cloud project, enable the Google Drive API, set up the Google Auth Platform app and **Publish** it (otherwise the sign-in expires after 7 days), then create a **Desktop app** client and paste its ID and secret into Settings → Sync on each device. The section lists the steps with links. Then **Connect Google Drive** signs in in your browser.
+From then on the phone syncs whenever both are on the same Wi-Fi with the app open: when it opens, every minute while it's open, and when you switch away. The QR code holds a secret key; every request is encrypted and signed with it, so nothing readable crosses the network. **New code** on the computer makes phones paired with the old one scan again.
 
-With automatic sync on, the app syncs when it opens, every minute while it's open, and when you switch away. What merges how:
+If the phone can't reach the computer, the computer's firewall is probably blocking port 47321. On Fedora or Bazzite: `sudo firewall-cmd --permanent --add-port=47321/tcp && sudo firewall-cmd --reload`.
 
-- Graph ledgers combine line by line: progress from both devices is kept, and a session deleted on one device is deleted on the other.
+What merges how:
+
+- Graph ledgers and reviews combine line by line: progress from both devices is kept, and a session deleted on one device is deleted on the other.
 - A session changed on both devices since the last sync: the newer copy wins, and the other is kept in `data/.sync/conflicts/`.
 - Settings merge key by key. API keys, the dictation engine, Claude Code, the custom provider and file-access folders stay per device.
 - Background jobs sync once they finish, so another device never re-runs one.
+
+<!-- Google Drive sync is switched off (GOOGLE_SYNC_ENABLED in src/core/sync-flag.ts). Its setup, for when it returns:
+**Settings → Sync** can also sync through a private LearnHarness folder in your Google Drive (the `drive.appdata` space). Google requires an app identity, so you bring your own OAuth client once: create a Google Cloud project, enable the Google Drive API, set up the Google Auth Platform app and **Publish** it (otherwise the sign-in expires after 7 days), then create a **Desktop app** client and paste its ID and secret into Settings → Sync on each device. Then **Connect Google Drive** signs in in your browser.
 -->
 
 ## Data, privacy, and usage

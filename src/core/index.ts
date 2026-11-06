@@ -89,5 +89,5 @@ export * from "./coverage.ts";
 // ONE session→markdown formatter — the extractor's view and the user-facing
 // export share it. Pure, browser-safe.
 export * from "./session-markdown.ts";
-export { SYNC_ENABLED } from "./sync-flag.ts";
+export { GOOGLE_SYNC_ENABLED, SYNC_ENABLED } from "./sync-flag.ts";
 export * from "./review.ts";

@@ -76,17 +76,17 @@ function syncable(rel: string, body: Buffer): boolean {
 	}
 }
 
-function readState(dataDir: string): State {
+function readState(stateDir: string): State {
 	try {
-		const raw = JSON.parse(fs.readFileSync(path.join(dataDir, SYNC_DIR, "state.json"), "utf-8")) as State;
+		const raw = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf-8")) as State;
 		if (raw && raw.version === 1 && raw.files && typeof raw.files === "object") return raw;
 	} catch { /* first sync */ }
 	return { version: 1, files: {} };
 }
 
-function writeState(dataDir: string, state: State): void {
-	fs.mkdirSync(path.join(dataDir, SYNC_DIR), { recursive: true });
-	writeFileAtomicSync(path.join(dataDir, SYNC_DIR, "state.json"), JSON.stringify(state));
+function writeState(stateDir: string, state: State): void {
+	fs.mkdirSync(stateDir, { recursive: true });
+	writeFileAtomicSync(path.join(stateDir, "state.json"), JSON.stringify(state));
 }
 
 /** The synced local files, plus the paths present but not syncable yet
@@ -112,8 +112,16 @@ function localFiles(dataDir: string): { files: Map<string, Buffer>; held: Set<st
 	return { files: out, held };
 }
 
-export async function runSync(dataDir: string, remote: Remote, now: () => Date = () => new Date()): Promise<SyncResult> {
-	const state = readState(dataDir);
+export type SyncOptions = {
+	/** Where the base lives (state.json + base/): one per remote, so a base
+	 *  agreed with one remote never reads as deletions against another.
+	 *  Default data/.sync (Google Drive). */
+	stateDir?: string;
+};
+
+export async function runSync(dataDir: string, remote: Remote, now: () => Date = () => new Date(), options: SyncOptions = {}): Promise<SyncResult> {
+	const stateDir = options.stateDir ?? path.join(dataDir, SYNC_DIR);
+	const state = readState(stateDir);
 	const { files: local, held } = localFiles(dataDir);
 	const remoteList = await remote.list();
 	const result: SyncResult = { uploaded: 0, downloaded: 0, merged: 0, deleted: 0, conflicts: 0, changedLocal: [] };
@@ -131,7 +139,7 @@ export async function runSync(dataDir: string, remote: Remote, now: () => Date =
 	}
 
 	const stamp = now().toISOString().replace(/[:.]/g, "-");
-	const baseFile = (rel: string) => path.join(dataDir, SYNC_DIR, "base", rel);
+	const baseFile = (rel: string) => path.join(stateDir, "base", rel);
 	const keepConflict = (rel: string, body: Buffer, side: string) => {
 		const file = path.join(dataDir, SYNC_DIR, "conflicts", stamp, `${rel}.${side}`);
 		fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -253,6 +261,6 @@ export async function runSync(dataDir: string, remote: Remote, now: () => Date =
 		setBase(rel, merged, remoteMd5);
 		if (needsUpload || !merged.equals(lBody)) result.merged++;
 	}
-	writeState(dataDir, state);
+	writeState(stateDir, state);
 	return result;
 }

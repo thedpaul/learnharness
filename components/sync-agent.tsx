@@ -1,13 +1,30 @@
 "use client";
 
 /**
- * Automatic Google Drive sync, driven by the open window (the server has no
- * scheduler): once at start, every minute while visible, and when the
- * window is hidden (switching apps, closing the laptop lid). The server
- * runs one sync at a time, so overlapping triggers cost nothing.
+ * Automatic sync, driven by the open window (the server has no scheduler):
+ * once at start, every minute while visible, and when the window is hidden
+ * (switching apps, closing the laptop lid). A paired phone syncs with its
+ * computer; Google Drive when that is switched on. The server runs one sync
+ * at a time, so overlapping triggers cost nothing. The status read also
+ * restarts the computer's phone-sync listener after a relaunch.
  */
 import { useEffect } from "react";
-import { SYNC_ENABLED } from "@/src/core";
+import { GOOGLE_SYNC_ENABLED, SYNC_ENABLED } from "@/src/core";
+
+export type LanStatusView = {
+	platform: "android" | "desktop";
+	hub: {
+		on: boolean;
+		listening: boolean;
+		port: number;
+		addresses: string[];
+		code: string | null;
+		qrSvg: string | null;
+		lastPeer: { device: string; at: string } | null;
+		error: string | null;
+	};
+	client: { paired: boolean; hubName: string | null; auto: boolean; lastSync: string | null; lastError: string | null };
+};
 
 export type SyncStatusView = {
 	configured: boolean;
@@ -17,6 +34,7 @@ export type SyncStatusView = {
 	running: boolean;
 	lastSync: string | null;
 	lastError: string | null;
+	lan: LanStatusView;
 };
 
 /** Run a sync now; resolves with the status after it. */
@@ -37,7 +55,9 @@ export function SyncAgent() {
 			if (stopped) return;
 			try {
 				const status = (await (await fetch("/api/sync", { cache: "no-store" })).json()) as SyncStatusView;
-				if (status.connected && status.auto && !status.running) await requestSync();
+				if (status.running) return;
+				const lan = status.lan?.client;
+				if (lan?.paired ? lan.auto : GOOGLE_SYNC_ENABLED && status.connected && status.auto) await requestSync();
 			} catch { /* offline or signed out: the status shows the last error */ }
 		};
 		void tick();

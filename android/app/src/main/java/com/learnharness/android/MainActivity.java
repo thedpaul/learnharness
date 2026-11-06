@@ -87,15 +87,23 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 				return true;
 			}
 			@Override public void onPermissionRequest(PermissionRequest request) {
+				// The app's own page only: the mic (dictation) and the camera
+				// (scanning the phone-sync QR code).
 				runOnUiThread(() -> {
-					boolean audioOnly = true;
-					for (String r : request.getResources()) if (!PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) audioOnly = false;
-					if (!audioOnly || !"127.0.0.1".equals(request.getOrigin().getHost())) { request.deny(); return; }
-					if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+					if (!"127.0.0.1".equals(request.getOrigin().getHost())) { request.deny(); return; }
+					java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+					for (String r : request.getResources()) {
+						String perm = PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r) ? Manifest.permission.RECORD_AUDIO
+							: PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r) ? Manifest.permission.CAMERA : null;
+						if (perm == null) { request.deny(); return; }
+						if (checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED) missing.add(perm);
+					}
+					if (missing.isEmpty()) {
 						request.grant(request.getResources());
 					} else {
+						if (pendingWebMic != null) pendingWebMic.deny();
 						pendingWebMic = request;
-						requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQUEST_WEB_MIC);
+						requestPermissions(missing.toArray(new String[0]), REQUEST_WEB_MIC);
 					}
 				});
 			}
@@ -179,7 +187,9 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 		boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
 		if (code == SpeechBridge.REQUEST_MIC) speech.onMicPermission(granted);
 		if (code == REQUEST_WEB_MIC && pendingWebMic != null) {
-			if (granted) pendingWebMic.grant(pendingWebMic.getResources());
+			boolean all = results.length > 0;
+			for (int r : results) if (r != PackageManager.PERMISSION_GRANTED) all = false;
+			if (all) pendingWebMic.grant(pendingWebMic.getResources());
 			else pendingWebMic.deny();
 			pendingWebMic = null;
 		}
