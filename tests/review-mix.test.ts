@@ -93,6 +93,12 @@ test("mix: a topic's round takes in the due cards of topics sharing its field, l
 	assert.equal(mixed.total, 5);
 	assert.equal(reviewStatus(new Date(), { topic: linux, mix: true }).queue.length, 2, "no related topic: the topic alone");
 
+	// All topics, shuffled: the same cards as by due date, in one mixed order.
+	const byDue = reviewStatus().queue.map((c) => c.id);
+	const shuffled = reviewStatus(new Date(), { shuffle: true }).queue.map((c) => c.id);
+	assert.deepEqual([...shuffled].sort(), [...byDue].sort());
+	assert.notDeepEqual(shuffled, byDue);
+
 	// A new topic is labelled with the earlier labels shown for reuse.
 	mk("Transformers", 1);
 	// The status calls above may have a check and a labelling in flight.

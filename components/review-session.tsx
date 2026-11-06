@@ -54,9 +54,11 @@ type Result = { correct: boolean; correctIndices: number[]; explanation?: string
 
 const TOPIC_KEY = "lh:review-topic";
 const MIX_KEY = "lh:review-mix";
+const SHUFFLE_KEY = "lh:review-shuffle";
 
-const statusUrl = (topic: string, mix: boolean) =>
-	topic ? `/api/reviews?topic=${encodeURIComponent(topic)}${mix ? "&mix=1" : ""}` : "/api/reviews";
+/** `mix` applies to one topic (its related topics join), `shuffle` to All topics. */
+const statusUrl = (topic: string, mix: boolean, shuffle: boolean) =>
+	topic ? `/api/reviews?topic=${encodeURIComponent(topic)}${mix ? "&mix=1" : ""}` : `/api/reviews${shuffle ? "?shuffle=1" : ""}`;
 
 /** A fresh order per review: position never becomes the memory. */
 function shuffled<T>(list: T[], seed: string): T[] {
@@ -86,18 +88,23 @@ export function ReviewSession() {
 	const [mix, setMix] = useState(false);
 	const mixRef = useRef(false);
 	mixRef.current = mix;
+	/** All topics in one shuffled order instead of by due date. */
+	const [shuffle, setShuffle] = useState(false);
+	const shuffleRef = useRef(false);
+	shuffleRef.current = shuffle;
 	const [showHeld, setShowHeld] = useState(false);
 	const answering = useRef(false);
 
 	useEffect(() => {
 		setMix(window.localStorage.getItem(MIX_KEY) === "1");
+		setShuffle(window.localStorage.getItem(SHUFFLE_KEY) === "1");
 		setTopic(window.localStorage.getItem(TOPIC_KEY) ?? "");
 	}, []);
 
 	/** A new round: the queue restarts from the top. */
 	const load = useCallback(async (t: string) => {
 		try {
-			const res = await fetch(statusUrl(t, mixRef.current), { cache: "no-store" });
+			const res = await fetch(statusUrl(t, mixRef.current, shuffleRef.current), { cache: "no-store" });
 			setStatus((await res.json()) as Status);
 			setI(0);
 			setError(null);
@@ -107,13 +114,13 @@ export function ReviewSession() {
 	}, []);
 	useEffect(() => {
 		if (topic !== null) void load(topic);
-	}, [topic, mix, load]);
+	}, [topic, mix, shuffle, load]);
 
 	/** Counts, topics, checks and calibration; the round in progress keeps its queue. */
 	const refreshCounts = useCallback(async () => {
 		if (topic === null) return;
 		try {
-			const fresh = (await (await fetch(statusUrl(topic, mixRef.current), { cache: "no-store" })).json()) as Status;
+			const fresh = (await (await fetch(statusUrl(topic, mixRef.current, shuffleRef.current), { cache: "no-store" })).json()) as Status;
 			setStatus((s) => {
 				// Nothing queued yet (cards still being checked): newly
 				// checked cards start a round right away.
@@ -139,6 +146,11 @@ export function ReviewSession() {
 		window.localStorage.setItem(MIX_KEY, on ? "1" : "0");
 		setDone({ right: 0, total: 0 });
 		setMix(on);
+	};
+	const pickShuffle = (on: boolean) => {
+		window.localStorage.setItem(SHUFFLE_KEY, on ? "1" : "0");
+		setDone({ right: 0, total: 0 });
+		setShuffle(on);
 	};
 
 	const card = status?.queue[i];
@@ -183,6 +195,12 @@ export function ReviewSession() {
 									<label className="flex shrink-0 items-center gap-2 font-ui text-xs text-muted-foreground" title="Shuffle in due cards from topics in the same field">
 										<span>Mix related</span>
 										<Toggle checked={mix} label="mix related topics" onChange={pickMix} />
+									</label>
+								)}
+								{!topic && (
+									<label className="flex shrink-0 items-center gap-2 font-ui text-xs text-muted-foreground" title="Every due card in one random order, all topics mixed">
+										<span>Shuffle</span>
+										<Toggle checked={shuffle} label="shuffle all topics" onChange={pickShuffle} />
 									</label>
 								)}
 							</div>

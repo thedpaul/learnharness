@@ -346,8 +346,9 @@ export function reviewCounts(now = new Date()): { due: number; total: number; se
 }
 
 /** `topic` narrows the deck to one session; with `mix`, the topics sharing
- *  a field with it join, and the round comes in a mixed order. */
-export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boolean; limit?: number } = {}): ReviewStatus {
+ *  a field with it join, and the round comes in a mixed order. Without a
+ *  topic, `shuffle` puts every due card in one random order. */
+export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boolean; shuffle?: boolean; limit?: number } = {}): ReviewStatus {
 	const { cards, checks, events, ok, due, settings, doneToday, left } = deck(now);
 	void kickReviewChecks().then(() => kickTopicFields());
 	const fields = readFields();
@@ -361,8 +362,8 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boo
 	for (const t of topics.values()) t.related = relatedTopics(t.id, fields).filter((id) => topics.has(id));
 	const scope = opts.topic ? new Set([opts.topic, ...(opts.mix ? (topics.get(opts.topic)?.related ?? []) : [])]) : null;
 	const inTopic = <T extends { chatId: string }>(list: T[]) => (scope ? list.filter((c) => scope.has(c.chatId)) : list);
-	const mixed = !!scope && scope.size > 1;
-	const shownDue = mixed ? mixedOrder(inTopic(due), `${opts.topic}:${now.toISOString().slice(0, 10)}:${doneToday}`) : inTopic(due);
+	const mixed = scope ? scope.size > 1 : !!opts.shuffle;
+	const shownDue = mixed ? mixedOrder(inTopic(due), `${opts.topic ?? "all"}:${now.toISOString().slice(0, 10)}:${doneToday}`) : inTopic(due);
 	const shownOk = inTopic(ok);
 	const okIds = new Set(shownOk.map((c) => c.id));
 	const rated = [...shownOk.map((c) => c.firstAnswer), ...events.filter((e) => okIds.has(e.card))];
