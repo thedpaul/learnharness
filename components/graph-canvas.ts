@@ -646,6 +646,10 @@ export class GraphCanvasRenderer {
 	private regionMeta: { id: string; label: string | null; lines: string[] | null; cx: number; cy: number; hue: number }[] = [];
 	private regionTuning: RegionTuning = DEFAULT_REGION_TUNING;
 	private physicsTuning: PhysicsTuning = DEFAULT_PHYSICS_TUNING;
+	/** False until the first setPhysicsTuning: the view feeds the stored
+	 *  tuning on every mount, and that first feed must not reheat — the
+	 *  saved positions already are that tuning's rest state. */
+	private physicsFed = false;
 	/** Gravity center for the live sim (graph bbox centroid at setData). */
 	private simCenter: Pt = { x: 0, y: 0 };
 	private regionBuiltVersion = -1;
@@ -811,7 +815,20 @@ export class GraphCanvasRenderer {
 	 *  the new feel"). A mid-settle change re-anneals, which is the
 	 *  honest response to new physics. */
 	setPhysicsTuning(input: Partial<PhysicsTuning>): void {
-		this.physicsTuning = sanitizePhysicsTuning(input);
+		const next = sanitizePhysicsTuning(input);
+		const first = !this.physicsFed;
+		this.physicsFed = true;
+		// Opening the graph re-feeds the same tuning: a full-strength
+		// re-anneal there cost seconds of region rebuilds on a phone
+		// (a REGION_EVERY bitmap blur ~40×/s) for no visible change.
+		if (first || JSON.stringify(next) === JSON.stringify(this.physicsTuning)) {
+			if (JSON.stringify(next) !== JSON.stringify(this.physicsTuning)) {
+				this.physicsTuning = next;
+				this.buildSim();
+			}
+			return;
+		}
+		this.physicsTuning = next;
 		this.buildSim();
 		// Reheat: a tuning change re-anneals the layout from its current
 		// state, so mode toggles (off/vertical/radial) visibly RE-FORM the
