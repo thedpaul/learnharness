@@ -112,6 +112,8 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 		web.addJavascriptInterface(speech, "LHAndroidSpeech");
 		files = new FileBridge(this, web);
 		web.addJavascriptInterface(files, "LHAndroidFiles");
+		web.addJavascriptInterface(new ReviewReminders(this), "LHAndroidReminders");
+		ReviewReminders.schedule(this);
 		rootView.addView(web, new FrameLayout.LayoutParams(-1, -1));
 
 		status = new LinearLayout(this);
@@ -156,6 +158,19 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 		ServerRuntime.listen(this);
 	}
 
+	/** A reminder's tap opens its page (ReviewReminders): "" for a plain launch. */
+	private static String routeOf(Intent intent) {
+		String route = intent == null ? null : intent.getStringExtra(ReviewReminders.EXTRA_ROUTE);
+		return route != null && route.startsWith("/") && !route.startsWith("//") ? route : "";
+	}
+
+	@Override protected void onNewIntent(Intent intent) {
+		super.onNewIntent(intent);
+		setIntent(intent);
+		String route = routeOf(intent);
+		if (loaded && !route.isEmpty()) web.loadUrl(ServerRuntime.url() + route);
+	}
+
 	private void startServer() { startForegroundService(new Intent(this, ServerService.class)); }
 
 	@Override public void onState(ServerRuntime.State state, String detail) {
@@ -168,7 +183,7 @@ public final class MainActivity extends Activity implements ServerRuntime.Listen
 					cm.setAcceptCookie(true);
 					cm.setCookie(ServerRuntime.url(), "lh_android=" + ServerRuntime.secret + "; Path=/; HttpOnly; SameSite=Strict");
 					cm.flush();
-					web.loadUrl(ServerRuntime.url());
+					web.loadUrl(ServerRuntime.url() + routeOf(getIntent()));
 					break;
 				case FAILED:
 					loaded = false;
