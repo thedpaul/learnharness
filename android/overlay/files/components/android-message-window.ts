@@ -12,7 +12,7 @@
  * whole view per slice — seconds of jank after the session opened.)
  */
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { messageIdFromHash } from "@/src/core";
+import { messageIdFromHash, questionIdFromHash } from "@/src/core";
 
 const FIRST = 12; // parts rendered on open
 const STEP = 8; // parts added per scroll-up batch
@@ -26,7 +26,14 @@ export type MessageWindow = {
 };
 
 function startFor(messages: readonly Msg[], offsets: number[], total: number): number {
-	const target = typeof window === "undefined" ? null : messageIdFromHash(window.location.hash);
+	const hash = typeof window === "undefined" ? "" : window.location.hash;
+	// A question link (the Changes page): open at the message holding that tool call.
+	const question = questionIdFromHash(hash);
+	if (question) {
+		const at = messages.findIndex((m) => m.parts.some((p) => (p as { toolCallId?: unknown } | null)?.toolCallId === question));
+		if (at >= 0) return offsets[at]!;
+	}
+	const target = messageIdFromHash(hash);
 	if (target) {
 		const at = messages.findIndex((m) => m.id === target);
 		return at >= 0 ? offsets[at]! : 0;
@@ -57,6 +64,23 @@ export function useAndroidMessageWindow(chatId: string, messages: readonly Msg[]
 	const startRef = useRef(start);
 	startRef.current = start;
 	const pending = isAndroid && !!state && state.chatId === chatId && state.start > 0;
+
+	// An in-app link can render the session before its URL (and hash) is
+	// set, and no hashchange follows: look at the hash again just after
+	// opening, and open further back if it points at older history.
+	useEffect(() => {
+		if (!isAndroid) return;
+		const timers = [0, 150, 500].map((ms) =>
+			window.setTimeout(() => {
+				if (!window.location.hash || messages.length === 0) return;
+				const want = startFor(messages, offsets, total);
+				setState((s) => (s && s.chatId === chatId && want < s.start ? { ...s, start: want } : s));
+			}, ms),
+		);
+		return () => timers.forEach((t) => window.clearTimeout(t));
+		// Per session open only: later hash changes have their own listener below.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [chatId, messages.length > 0]);
 
 	useEffect(() => {
 		if (!pending) return;
