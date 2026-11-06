@@ -74,5 +74,17 @@ test("reviews: only checked-ok cards queue, by topic; answers update the counts"
 	assert.equal(reviewCounts().due, 1);
 	assert.equal(reviewStatus(new Date(), { topic: a.id }).due, 0);
 	assert.equal(recordReview(`${a.id}:q2`, [1], 50), null, "a held card can't be answered");
+
+	// Reset: recent reviews are dropped (by topic, by period); the card comes due again.
+	const { resetReviews } = await import("../src/server/reviews.ts");
+	const q3 = `${b.id}:q3`;
+	recordReview(q3, [1], 80);
+	assert.equal(reviewCounts().due, 0);
+	assert.deepEqual(resetReviews(30, { topic: a.id }), { removed: 1 });
+	assert.equal(reviewStatus(new Date(), { topic: a.id }).due, 1, "the Loops card is due again");
+	assert.equal(reviewStatus(new Date(), { topic: b.id }).due, 0, "other topics keep their reviews");
+	assert.deepEqual(resetReviews(30, {}, new Date(Date.now() + 40 * 86_400_000)), { removed: 0 }, "older than the period: kept");
+	assert.deepEqual(resetReviews(null), { removed: 1 });
+	assert.equal(reviewCounts().due, 2);
 	setReviewChecker(null);
 });
