@@ -16,7 +16,7 @@ import { describe, it } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Hint, hintText } from "../components/ui/hint.tsx";
-import { TOOLTIP_DELAY_MS } from "../components/ui/tooltip.tsx";
+import { TOOLTIP_DELAY_MS, TOUCH_SUPPRESS_MS, openedByTouch } from "../components/ui/tooltip.tsx";
 import { AUTO_UPDATE_HINT } from "../components/settings/update-settings.tsx";
 import { IS_MAC } from "../src/core/keyboard.ts";
 
@@ -41,6 +41,13 @@ describe("hintText — the parenthesized composition", () => {
 describe("subtlety round pins (owner 2026-09-25)", () => {
 	it("the rest delay is 500ms — tooltips appear on pause, never in passing", () => {
 		assert.equal(TOOLTIP_DELAY_MS, 500);
+	});
+});
+
+describe("a tap is not a hover", () => {
+	it("opens within a second of a touch are ignored; without a touch nothing is suppressed", () => {
+		assert.equal(TOUCH_SUPPRESS_MS, 1000);
+		assert.equal(openedByTouch(), false, "no touch yet (mouse and keyboard opens pass)");
 	});
 });
 
