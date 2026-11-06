@@ -32,6 +32,7 @@ import {
 import { resolveRoleSpec } from "../core/settings-resolution.ts";
 import { providerKeyPresent } from "./keys.ts";
 import { lanPaired } from "./sync/lan.ts";
+import { writeFileAtomicSync } from "../store/atomic-write.ts";
 import { stores } from "./stores.ts";
 
 const LEDGER = () => path.join(PATHS.data, "reviews.jsonl");
@@ -267,4 +268,31 @@ export function recordReview(cardId: string, selected: number[], confidence: num
 		notes: Object.fromEntries(card.options.filter((o) => o.note).map((o) => [String(o.index), o.note!])),
 		nextDueAt: schedule.dueAt,
 	};
+}
+
+/**
+ * Undo the reviews of the last `days` days (all of them when days is
+ * null), optionally in one topic: their ledger lines are dropped, so those
+ * cards fall back to their earlier schedule and come due again. A removed
+ * line stays removed on the other device after a sync (mergeLedgerText).
+ * Session answers (the first answer of each card) are never touched.
+ */
+export function resetReviews(days: number | null, opts: { topic?: string } = {}, now = new Date()): { removed: number } {
+	const text = readText(LEDGER());
+	if (!text) return { removed: 0 };
+	const since = days === null ? -Infinity : now.getTime() - days * 86_400_000;
+	let removed = 0;
+	const kept = text.split("\n").filter((line) => {
+		if (!line.trim()) return false;
+		const event = parseReviewLedger(line)[0];
+		if (!event) return true;
+		const inTopic = !opts.topic || event.card.startsWith(`${opts.topic}:`);
+		const drop = inTopic && Date.parse(event.at) >= since;
+		if (drop) removed++;
+		return !drop;
+	});
+	if (removed === 0) return { removed };
+	writeFileAtomicSync(LEDGER(), kept.length ? `${kept.join("\n")}\n` : "");
+	emit("reviews-changed", {});
+	return { removed };
 }

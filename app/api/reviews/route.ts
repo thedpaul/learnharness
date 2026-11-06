@@ -1,7 +1,8 @@
 /** Spaced reviews (src/server/reviews.ts): GET the due queue + stats
  *  (?topic=<session id> narrows it; ?count=1 is the badges' due count only),
- *  POST one answer ({ card, selected: number[], confidence? }). */
-import { recordReview, reviewCounts, reviewStatus } from "@/src/server";
+ *  POST one answer ({ card, selected: number[], confidence? }), DELETE
+ *  ?days=<n>[&topic=] undoes recent reviews (no days = all of them). */
+import { recordReview, resetReviews, reviewCounts, reviewStatus } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,4 +23,13 @@ export async function POST(request: Request) {
 	const result = recordReview(body.card, selected, confidence);
 	if (!result) return Response.json({ message: "That question is gone (its session was deleted, or its check held it back)" }, { status: 404 });
 	return Response.json(result);
+}
+
+export async function DELETE(request: Request) {
+	const params = new URL(request.url).searchParams;
+	const raw = params.get("days");
+	const days = raw === null ? null : Number(raw);
+	if (days !== null && !(Number.isFinite(days) && days > 0)) return Response.json({ message: "days must be a positive number" }, { status: 400 });
+	const topic = params.get("topic");
+	return Response.json(resetReviews(days, topic ? { topic: topic.slice(0, 200) } : {}));
 }

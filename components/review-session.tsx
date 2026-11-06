@@ -240,9 +240,110 @@ export function ReviewSession() {
 							<CalibrationChart data={status.calibration} />
 						</section>
 					)}
+					{status && status.total > 0 && (
+						<ResetReviews
+							topicTitle={topic ? status.topics.find((t) => t.id === topic)?.title : undefined}
+							onReset={async (days) => {
+								const q = new URLSearchParams();
+								if (days !== null) q.set("days", String(days));
+								if (topic) q.set("topic", topic);
+								const res = await fetch(`/api/reviews?${q}`, { method: "DELETE" });
+								if (!res.ok) throw new Error();
+								const { removed } = (await res.json()) as { removed: number };
+								setDone({ right: 0, total: 0 });
+								await load(topic ?? "");
+								return removed;
+							}}
+						/>
+					)}
 				</div>
 			</div>
 		</div>
+	);
+}
+
+const RESET_SPANS: { days: number | null; label: string }[] = [
+	{ days: 1, label: "today" },
+	{ days: 7, label: "the last 7 days" },
+	{ days: 30, label: "the last 30 days" },
+	{ days: null, label: "all time" },
+];
+
+/** Undo recent reviews: those cards fall back to their earlier schedule. Two taps, no dialog. */
+function ResetReviews({ topicTitle, onReset }: { topicTitle?: string; onReset: (days: number | null) => Promise<number> }) {
+	const [span, setSpan] = useState(2);
+	const [confirming, setConfirming] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [message, setMessage] = useState<string | null>(null);
+	const pick = RESET_SPANS[span]!;
+	const run = async () => {
+		setBusy(true);
+		try {
+			const removed = await onReset(pick.days);
+			setMessage(removed ? `Reset ${removed} review${removed === 1 ? "" : "s"}.` : "No reviews in that period.");
+		} catch {
+			setMessage("Couldn't reset your reviews.");
+		} finally {
+			setBusy(false);
+			setConfirming(false);
+		}
+	};
+	return (
+		<section className="flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground" data-testid="review-reset">
+			<h2 className="font-ui text-xs font-medium uppercase tracking-wide">Reset reviews</h2>
+			<p>
+				Forget the reviews you did{topicTitle ? ` in ${topicTitle}` : ""} and start those cards over from their earlier schedule.
+				Your session answers stay.
+			</p>
+			<div className="flex flex-wrap items-center gap-2">
+				<select
+					value={span}
+					onChange={(e) => {
+						setSpan(Number(e.target.value));
+						setConfirming(false);
+						setMessage(null);
+					}}
+					aria-label="Reset period"
+					data-testid="review-reset-span"
+					className="h-8 min-w-0 rounded-md border border-border bg-background px-2 font-ui text-sm text-foreground outline-none"
+				>
+					{RESET_SPANS.map((s, n) => (
+						<option key={s.label} value={n}>
+							{s.label[0]!.toUpperCase() + s.label.slice(1)}
+						</option>
+					))}
+				</select>
+				{confirming ? (
+					<>
+						<button
+							type="button"
+							disabled={busy}
+							onClick={() => void run()}
+							data-testid="review-reset-confirm"
+							className="h-8 rounded-md bg-destructive px-3 font-ui text-sm text-white disabled:opacity-60"
+						>
+							Reset {pick.label}
+						</button>
+						<button type="button" disabled={busy} onClick={() => setConfirming(false)} className="h-8 px-2 font-ui text-sm hover:text-foreground">
+							Cancel
+						</button>
+					</>
+				) : (
+					<button
+						type="button"
+						onClick={() => {
+							setConfirming(true);
+							setMessage(null);
+						}}
+						data-testid="review-reset-start"
+						className="h-8 rounded-md border border-border px-3 font-ui text-sm text-foreground hover:bg-muted"
+					>
+						Reset…
+					</button>
+				)}
+			</div>
+			{message && <p data-testid="review-reset-message">{message}</p>}
+		</section>
 	);
 }
 
