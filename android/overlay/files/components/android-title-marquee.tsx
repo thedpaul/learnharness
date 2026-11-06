@@ -4,12 +4,13 @@
  * Android build only (android/overlay): a session title too long for the
  * phone's header slides through instead of being cut off — scroll to the
  * end, pause, back. Short titles stay still. The distance is measured per
- * title (and on resize) into --lh-marquee-dist. It runs a few passes when
- * a title appears (a new title restarts it) and pauses while typing.
+ * title (and on resize) into --lh-marquee-dist. It keeps sliding while the
+ * title doesn't fit (a new title restarts it) and pauses while typing. The
+ * sidebar's session titles slide the same way while the sidebar is open.
  */
 import { useEffect } from "react";
 
-const SELECTOR = "header button.font-title > .lh-title-text";
+const SELECTOR = "header button.font-title > .lh-title-text, .lh-row-title > .lh-title-text";
 
 const seen = new WeakMap<HTMLElement, string>();
 
