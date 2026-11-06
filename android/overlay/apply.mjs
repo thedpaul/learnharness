@@ -506,3 +506,41 @@ import { useAndroidMessageWindow } from "@/components/android-message-window";`,
 												if (!lhWindow.showPart(mi, pi)) return null;
 												const isLastPart = mi === messages.length - 1 && pi === m.parts.length - 1;`,
 ]]);
+
+// Fluidity pass (2026-11-06). Tapping a session closed the sidebar only
+// once the new page had rendered (~0.8s of a dead tap): close it on tap.
+edit("components/sidebar.tsx", [[
+	`									onOpen={() => {
+										setKbdIndex(null);
+										router.push(\`/chat/\${c.id}\`);`,
+	`									onOpen={() => {
+										setKbdIndex(null);
+										if (isPhone() && open) toggle();
+										router.push(\`/chat/\${c.id}\`);`,
+]]);
+// Frame cost on the phone: every backdrop-filter blur is re-rendered on any
+// animated frame anywhere (a moving title cost 15% dropped frames; scrolling
+// and the dock fold paid it too). The surfaces are near-opaque already —
+// drop the blur and fill them in. The sidebar slides on the compositor
+// (transform) instead of animating its width (a layout per frame), and the
+// plan marginalia (never visible at phone width) isn't kept painting.
+fs.appendFileSync(path.join(root, "app/globals.css"), `
+/* Android fluidity (android/overlay/apply.mjs) */
+html.lh-android *, html.lh-android *::before, html.lh-android *::after { backdrop-filter: none !important; }
+html.lh-android .bg-card\\/80, html.lh-android .bg-card\\/85, html.lh-android .bg-card\\/95 { background-color: color-mix(in oklab, var(--card) 97%, transparent); }
+html.lh-android .bg-background\\/80, html.lh-android .bg-background\\/85 { background-color: color-mix(in oklab, var(--background) 97%, transparent); }
+@media (max-width: 767px) {
+	html.lh-android [data-testid="plan-marginalia"] { display: none; }
+	html.lh-android aside.lh-sidebar {
+		width: 18rem !important; transform: translateX(0); will-change: transform;
+		transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+	}
+	html.lh-android aside.lh-sidebar[aria-hidden="true"] { transform: translateX(-100%); }
+	html.lh-android .lh-sidebar-backdrop { animation: lh-fade-in 220ms ease-out; }
+	@keyframes lh-fade-in { from { opacity: 0; } }
+}
+/* The sliding title: a few passes after it appears, and paused while typing. */
+html.lh-android header button.font-title.lh-marquee > .lh-title-text { animation-iteration-count: 3; will-change: transform; }
+html.lh-android.lh-editing header button.font-title.lh-marquee > .lh-title-text { animation-play-state: paused; }
+`);
+console.log("[overlay] app/globals.css (fluidity)");

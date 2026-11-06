@@ -11,12 +11,12 @@
  * jumps to an unrendered message. (An idle-time backfill re-rendered the
  * whole view per slice — seconds of jank after the session opened.)
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { messageIdFromHash } from "@/src/core";
 
-const FIRST = 20; // parts rendered on open
-const STEP = 16; // parts added per scroll-up batch
-const NEAR_TOP_PX = 2000;
+const FIRST = 12; // parts rendered on open
+const STEP = 8; // parts added per scroll-up batch
+const NEAR_TOP_PX = 3000;
 
 type Msg = { id: string; parts: readonly unknown[] };
 
@@ -60,7 +60,10 @@ export function useAndroidMessageWindow(chatId: string, messages: readonly Msg[]
 
 	useEffect(() => {
 		if (!pending) return;
-		const grow = (by: number) => setState((s) => (s && s.start > 0 ? { ...s, start: Math.max(0, s.start - by) } : s));
+		// A transition: React renders the batch in interruptible slices, so a
+		// scroll in progress keeps its frames.
+		const grow = (by: number) =>
+			startTransition(() => setState((s) => (s && s.start > 0 ? { ...s, start: Math.max(0, s.start - by) } : s)));
 		const scroller = document.querySelector<HTMLElement>("[role=log] > *");
 		// One batch per render: scroll events keep firing while the last
 		// batch is still rendering.
@@ -71,9 +74,12 @@ export function useAndroidMessageWindow(chatId: string, messages: readonly Msg[]
 			grownFrom = from;
 			grow(STEP);
 		};
-		const onScroll = more((el) => el.scrollTop < NEAR_TOP_PX);
-		// Too little rendered to scroll at all: nothing would ever fire.
-		const check = window.setInterval(more((el) => el.scrollHeight <= el.clientHeight + 1), 500);
+		const nearTop = more((el) => el.scrollTop < NEAR_TOP_PX);
+		const onScroll = nearTop;
+		// Also on a timer: resting at the very top (or too little rendered to
+		// scroll) fires no scroll event, and older history would never load.
+		// Bounded — it stops once NEAR_TOP_PX of history sits above.
+		const check = window.setInterval(nearTop, 500);
 		scroller?.addEventListener("scroll", onScroll, { passive: true });
 		// A link to a message not rendered yet: render everything; the
 		// session navigation's retry loop then finds the anchor.
