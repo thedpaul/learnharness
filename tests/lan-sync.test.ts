@@ -101,15 +101,15 @@ test("phone ↔ computer over the hub: both sides' changes meet, sealed end to e
 	assert.deepEqual(await call("hello"), { hubId: "hub-1", name: "test-desktop" });
 
 	put(hub.desktop, "chats/chat_d.json", '{"id":"d"}');
-	put(hub.desktop, "reviews.jsonl", '{"card":"x","at":"1","correct":true}\n');
+	put(hub.desktop, "graph/edges.jsonl", '{"card":"x","at":"1","correct":true}\n');
 	put(phone, "chats/chat_p.json", '{"id":"p"}');
-	put(phone, "reviews.jsonl", '{"card":"y","at":"2","correct":false}\n');
+	put(phone, "graph/edges.jsonl", '{"card":"y","at":"2","correct":false}\n');
 	await phoneSync(phone, call);
 
 	assert.equal(get(phone, "chats/chat_d.json"), '{"id":"d"}');
 	assert.equal(get(hub.desktop, "chats/chat_p.json"), '{"id":"p"}', "end pulls the phone's changes into the desktop data");
-	assert.equal(get(phone, "reviews.jsonl"), get(hub.desktop, "reviews.jsonl"));
-	assert.deepEqual(get(hub.desktop, "reviews.jsonl")!.trim().split("\n").sort(), [
+	assert.equal(get(phone, "graph/edges.jsonl"), get(hub.desktop, "graph/edges.jsonl"));
+	assert.deepEqual(get(hub.desktop, "graph/edges.jsonl")!.trim().split("\n").sort(), [
 		'{"card":"x","at":"1","correct":true}',
 		'{"card":"y","at":"2","correct":false}',
 	]);
