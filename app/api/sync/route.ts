@@ -1,4 +1,5 @@
 /** Google Drive sync: status and actions (Settings → Sync, the sync agent). */
+import { SYNC_ENABLED } from "@/src/core";
 import { beginSignIn, configureSync, setAutoSync, signOut, syncNow, syncStatus } from "@/src/server";
 
 export const dynamic = "force-dynamic";
@@ -11,11 +12,15 @@ function loopbackOrigin(request: Request): string | null {
 	return /^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(host) ? `http://${host}` : null;
 }
 
+const off = () => Response.json({ message: "Sync is switched off" }, { status: 404 });
+
 export async function GET() {
+	if (!SYNC_ENABLED) return off();
 	return Response.json(syncStatus());
 }
 
 export async function POST(request: Request) {
+	if (!SYNC_ENABLED) return off();
 	const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 	try {
 		switch (body?.action) {

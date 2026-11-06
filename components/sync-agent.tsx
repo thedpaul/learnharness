@@ -7,6 +7,7 @@
  * runs one sync at a time, so overlapping triggers cost nothing.
  */
 import { useEffect } from "react";
+import { SYNC_ENABLED } from "@/src/core";
 
 export type SyncStatusView = {
 	configured: boolean;
@@ -30,6 +31,7 @@ const INTERVAL_MS = 60_000;
 
 export function SyncAgent() {
 	useEffect(() => {
+		if (!SYNC_ENABLED) return;
 		let stopped = false;
 		const tick = async () => {
 			if (stopped) return;
