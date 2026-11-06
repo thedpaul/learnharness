@@ -188,11 +188,16 @@ function runChecks(
 		} catch (err) {
 			slot.lastError = err instanceof Error ? err.message : String(err);
 			slot.failedAt = Date.now();
-		} finally {
-			slot.running = undefined;
 		}
 	})();
+	// Cleared after it settles, not in a finally: a run with nothing to do
+	// (or no model) ends synchronously, and a finally would clear the slot
+	// before this assignment, leaving a settled run there for good — every
+	// later kick returned it and new cards were never checked.
 	slot.running = run;
+	void run.then(() => {
+		if (slot.running === run) slot.running = undefined;
+	});
 	return run;
 }
 
