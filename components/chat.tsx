@@ -3,6 +3,7 @@
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
 import { visibleQueuedSteers } from "@/components/session-core";
+import { sharedGetJson } from "@/components/shared-get";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
 import { useModelSetup, selectedModelUnavailable, openModelPicker, ZeroKeysPill } from "@/components/setup-cta";
@@ -936,9 +937,8 @@ export function Chat({
 	const [dockReserve, setDockReserve] = useState(208);
 	const syncTurns = useCallback(async () => {
 		try {
-			const res = await fetch(`/api/chats/${chatId}`);
-			if (!res.ok) return;
-			const record = (await res.json()) as { turns?: TurnUsage[]; pricing?: SessionPricing };
+			const { body: record } = await sharedGetJson<{ turns?: TurnUsage[]; pricing?: SessionPricing }>(`/api/chats/${chatId}`);
+			if (!record) return;
 			if (Array.isArray(record.turns)) setTurns(record.turns);
 			setPricing(record.pricing);
 		} catch {
