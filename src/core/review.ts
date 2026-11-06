@@ -313,8 +313,9 @@ export function parseReviewLedger(text: string): ReviewEvent[] {
 
 /** Bump to re-check every card (a better checker, a new rule). An older
  *  check keeps its card in the deck until the re-check replaces it; a
- *  check from a newer build is ignored. v2: notes in LaTeX. */
-export const REVIEW_CHECK_VERSION = 2;
+ *  check from a newer build is ignored. v2: notes in LaTeX. v3: the
+ *  explanation rewritten for shuffled options. */
+export const REVIEW_CHECK_VERSION = 3;
 
 export type ReviewVerdict = "ok" | "wrong" | "unclear";
 
@@ -330,6 +331,8 @@ export interface ReviewCheck {
 	context?: string;
 	/** One line per option, by option index ("1", "2", …). */
 	notes?: Record<string, string>;
+	/** The explanation rewritten for review (options shuffled); absent = the tutor's stands. */
+	explanation?: string;
 }
 
 export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
@@ -351,6 +354,7 @@ export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
 				...(typeof c.reason === "string" && c.reason ? { reason: c.reason } : {}),
 				...(typeof c.context === "string" && c.context.trim() ? { context: c.context.trim() } : {}),
 				...(c.notes && typeof c.notes === "object" ? { notes: c.notes } : {}),
+				...(typeof c.explanation === "string" && c.explanation.trim() ? { explanation: c.explanation.trim() } : {}),
 			});
 		} catch {
 			/* a torn line: skip */
@@ -364,13 +368,15 @@ export function checkIsStale(check: ReviewCheck | undefined): boolean {
 	return !!check && check.v < REVIEW_CHECK_VERSION;
 }
 
-/** The card as reviewed: the check's context, and per-option notes (the
+/** The card as reviewed: the check's context, its explanation rewritten
+ *  for shuffled options when it made one, and per-option notes (the
  *  authoring model's own first, the check's for older cards). */
 export function checkedCard(card: ReviewCard, check: ReviewCheck | undefined): ReviewCard {
 	if (!check) return card;
 	return {
 		...card,
 		...(check.context ? { context: check.context } : {}),
+		...(check.explanation ? { explanation: check.explanation } : {}),
 		options: card.options.map((o) => {
 			const note = o.note ?? check.notes?.[String(o.index)];
 			return note ? { ...o, note } : o;

@@ -26,6 +26,8 @@ export type CardCheckResult = {
 	verdict: "ok" | "wrong" | "unclear";
 	reason?: string;
 	context?: string;
+	/** The tutor's explanation rewritten for review; absent when it was fine as is. */
+	explanation?: string;
 	notes: Record<string, string>;
 };
 
@@ -46,6 +48,13 @@ const checkSchema = Type.Object({
 					"definition or scenario it refers to ('the loop above', 'this function'). Empty string if the " +
 					"question already stands alone. Never hint at the answer.",
 			}),
+			explanation: Type.String({
+				description:
+					"The tutor's explanation as the learner reads it after answering in review, where the options " +
+					"appear SHUFFLED: refer to options by their content, never by letter, number or position " +
+					"('(b)', 'option A', 'the second one'). Keep it short, correct (fix anything wrong) and in LaTeX. " +
+					"Empty string if the tutor's explanation already does all that.",
+			}),
 			notes: Type.Array(
 				Type.Object({
 					option: Type.Integer({ description: "The option number as given." }),
@@ -63,8 +72,9 @@ For every card:
 1. Solve it yourself from the options. Compare with the marked answer. If the marked answer is wrong, or another option is equally correct, the verdict is "wrong" — a false card is worse than no card.
 2. Decide whether it stands on its own. If it leans on the lesson ("the code above", "this example", a variable defined earlier), write the missing piece as context: reproduce the code or formula exactly, state the setup in a sentence or two. Keep it as short as the question allows, and never give away the answer. If even with context it can't be answered fairly, the verdict is "unclear".
 3. Write one short note per option: why it is right, or which misconception picks it.
+4. Check the tutor's explanation as the learner will read it in review, after answering, with the options shuffled. If it names options by letter, number or position, gets something wrong, or writes math outside LaTeX, rewrite it: same reasoning, options named by what they say. If it is already right, leave the explanation empty.
 
-Use markdown like the cards do, and write every formula, symbol and variable in LaTeX — inline $...$, e.g. $\\sqrt{d_k}$, $x_t = \\sqrt{\\bar\\alpha_t}\\,x_0$, $\\sum_j e^{z_j}$ — in notes, context and reasons alike. Never Unicode math (√, ∑, ᾱ, ≠, ≤) or bare d_k / x^2: the learner's screen renders LaTeX, and plain underscores turn into italics. Submit every card in one call.`;
+Use markdown like the cards do, and write every formula, symbol and variable in LaTeX — inline $...$, e.g. $\\sqrt{d_k}$, $x_t = \\sqrt{\\bar\\alpha_t}\\,x_0$, $\\sum_j e^{z_j}$ — in notes, context, explanations and reasons alike. Never Unicode math (√, ∑, ᾱ, ≠, ≤) or bare d_k / x^2: the learner's screen renders LaTeX, and plain underscores turn into italics. Submit every card in one call.`;
 
 function cardBlock(c: CardToCheck): string {
 	const options = c.options.map((o) => `${o.index}. ${o.label}`).join("\n");
@@ -119,6 +129,7 @@ export async function checkCards(opts: {
 			verdict: c.verdict,
 			...(c.reason?.trim() ? { reason: c.reason.trim() } : {}),
 			...(c.context.trim() ? { context: c.context.trim() } : {}),
+			...(c.explanation.trim() ? { explanation: c.explanation.trim() } : {}),
 			notes: Object.fromEntries(c.notes.filter((n) => n.note.trim()).map((n) => [String(n.option), n.note.trim()])),
 		}));
 }

@@ -196,7 +196,8 @@ export const quizInputBase = Type.Object({
 		description:
 			"REQUIRED. Explanation revealed AFTER the learner answers (shown whether they got it right or wrong). " +
 			"Use it to reinforce why the correct answer is correct. It is written BEFORE correctAnswer by design: " +
-			"reason it out first, then commit the answer the reasoning supports.",
+			"reason it out first, then commit the answer the reasoning supports. Name options by what they say, " +
+			"never by letter or position (reviews shuffle them); formulas in LaTeX.",
 	}),
 	correctAnswer: Type.Union([Type.String(), Type.Array(Type.String())], {
 		description:
