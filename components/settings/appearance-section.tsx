@@ -40,6 +40,7 @@ import {
 import { MenuShell } from "@/components/menu-shell";
 import { Hint } from "@/components/ui/hint";
 import { useAppearance } from "./appearance.tsx";
+import { playCue, setSoundEffectsEnabled, soundEffectsEnabled } from "@/components/sound-cues";
 import { FontMenuList } from "./model-menu";
 import { CommitInput, SettingsMenuTrigger, SettingsRow, ThinSelect, Toggle } from "./controls.tsx";
 
@@ -99,6 +100,9 @@ export function AppearanceSection({
 }) {
 	const { appearance: resolved } = useAppearance();
 	const md = appearance?.mdRendering;
+	// Device-local (sound-cues.ts), read after mount: no storage on the server render.
+	const [sound, setSound] = useState(true);
+	useEffect(() => setSound(soundEffectsEnabled()), []);
 
 	// The font dropdown's open state + its enumeration cache. undefined =
 	// not enumerated yet (desktop: click-bound queryLocalFonts pending);
@@ -278,6 +282,17 @@ export function AppearanceSection({
 						const n = Number(v);
 						if (!Number.isFinite(n)) return; // bad input: no write, factory stays
 						onSectionChange({ ...appearance, proseFontSize: Math.min(24, Math.max(12, Math.round(n))) });
+					}}
+				/>
+			</SettingsRow>
+			<SettingsRow label="Sound effects" hint="Stored on this device" testid="row-sound-effects">
+				<Toggle
+					checked={sound}
+					label="sound effects"
+					onChange={(on) => {
+						setSoundEffectsEnabled(on);
+						setSound(on);
+						if (on) playCue("correct");
 					}}
 				/>
 			</SettingsRow>

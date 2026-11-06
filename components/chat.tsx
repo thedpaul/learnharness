@@ -85,6 +85,7 @@ import {
 	questionNeedsReveal,
 } from "@/src/core";
 import { ReadingThinkingField } from "@/components/reading-thinking";
+import { playCue } from "@/components/sound-cues";
 import { currentUserThinkingOpen, setAllUserThinkingOpen } from "@/components/thinking-block";
 
 /** One width for everything: transcript, cards, and the bottom blob share this column. */
@@ -1769,6 +1770,9 @@ export function Chat({
 						// check answer is its only carrier.
 						saveQuestionDraft(pending.key, { readingThinking: readingThinkingRef.current });
 						const reading = readingThinkingRef.current.trim() || undefined;
+						// Graded quiz answers get a sound cue ("I don't know" and
+						// dismissals stay silent).
+						if (typeof output.correct === "boolean" && !output.dontKnow && !output.dismissed) playCue(output.correct ? "correct" : "wrong");
 						// The pending-id effect clears this only when the question
 						// actually leaves. An offline preflight keeps the draft visible.
 						submitAnswer(pending.tool, pending.toolCallId, reading ? { ...output, readingThinking: reading } : output, pending.key);
