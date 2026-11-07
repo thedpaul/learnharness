@@ -11,7 +11,9 @@
  * a node is re-verified only once its last check is older than the window.
  * Triggers: the graph view's "Recheck facts" button (everything, now) and,
  * when Settings → Graph → "Recheck facts on startup" is on, once per server
- * start (only what is past the window). A phone paired with a computer
+ * start (only what is past the window). Settings → Graph → "Recheck
+ * everything" is the full run: every fact, and every review card checked
+ * again from scratch whatever its last check said. A phone paired with a computer
  * leaves the startup run to the computer.
  */
 import * as fs from "node:fs";
@@ -23,7 +25,7 @@ import { getGraph } from "../core/graph.ts";
 import { birthSessionOf } from "../core/session-clusters.ts";
 import { resolveSettings } from "../core/settings-resolution.ts";
 import { lanPaired } from "./sync/lan.ts";
-import { auditorEngine, onFirstCount, recheckCards } from "./reviews.ts";
+import { auditorEngine, onFirstCount, recheckCards, reviewCardCount } from "./reviews.ts";
 import { stores } from "./stores.ts";
 
 const FACT_CHECKS = () => path.join(PATHS.graph, "fact-checks.jsonl");
@@ -42,7 +44,7 @@ export type RecheckStatus = {
 	done: number;
 	total: number;
 	/** The last finished run. */
-	last: { at: string; checked: number; corrected: { name: string; statement: string; reason?: string }[]; error?: string } | null;
+	last: { at: string; checked: number; corrected: { name: string; statement: string; reason?: string }[]; error?: string; full?: boolean; cards?: number } | null;
 };
 
 type Slot = { running?: Promise<void>; status: RecheckStatus; startupDone?: boolean };
@@ -82,15 +84,23 @@ export function setFactChecker(fn: Checker | null): void {
 
 const changed = () => emit("recheck-changed", {});
 
-/** Run the recheck: `force` = everything not checked in the last hour; otherwise only past the window. */
-export function runRecheck(opts: { force?: boolean } = {}): Promise<void> {
+/** What a full recheck would check (Settings' confirm step). */
+export function recheckScope(): { facts: number; cards: number } {
+	return { facts: getGraph(stores.graphStore).nodes.length, cards: reviewCardCount() };
+}
+
+/** Run the recheck: `force` = everything not checked in the last hour;
+ *  otherwise only past the window. `full` = every fact and every review
+ *  card, from scratch. */
+export function runRecheck(opts: { force?: boolean; full?: boolean } = {}): Promise<void> {
 	const s = slot();
 	if (s.running) return s.running;
-	const before = Date.now() - (opts.force ? RESUME_MS : RECHECK_WINDOW_MS);
+	const before = opts.full ? Infinity : Date.now() - (opts.force ? RESUME_MS : RECHECK_WINDOW_MS);
 	const status = s.status;
 	const run = (async () => {
 		const corrected: NonNullable<RecheckStatus["last"]>["corrected"] = [];
 		let checked = 0;
+		let cards = 0;
 		let error: string | undefined;
 		try {
 			const seen = lastChecks();
@@ -150,7 +160,9 @@ export function runRecheck(opts: { force?: boolean } = {}): Promise<void> {
 			changed();
 			await recheckCards({
 				corrections,
+				all: opts.full,
 				onProgress: (done, total) => {
+					cards = total;
 					Object.assign(status, { done, total });
 					changed();
 				},
@@ -158,7 +170,7 @@ export function runRecheck(opts: { force?: boolean } = {}): Promise<void> {
 		} catch (err) {
 			error = err instanceof Error ? err.message : String(err);
 		} finally {
-			status.last = { at: new Date().toISOString(), checked, corrected, ...(error ? { error } : {}) };
+			status.last = { at: new Date().toISOString(), checked, corrected, cards, ...(opts.full ? { full: true } : {}), ...(error ? { error } : {}) };
 			Object.assign(status, { running: false, phase: null, done: 0, total: 0 });
 			s.running = undefined;
 			changed();

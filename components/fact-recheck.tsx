@@ -2,8 +2,8 @@
 
 /**
  * The graph view's "Recheck facts" control (src/server/fact-check.ts):
- * re-verifies every graph proposition and review card now, correcting false
- * statements. Progress rides the recheck-changed event; when a run
+ * re-verifies every graph proposition now, correcting false statements,
+ * and rechecks the review cards of sessions with a corrected fact. Progress rides the recheck-changed event; when a run
  * finishes, the graph refetches and what was corrected is listed below.
  */
 import { Loader2Icon, ShieldCheckIcon, XIcon } from "lucide-react";
@@ -17,7 +17,7 @@ type Status = {
 	phase: "facts" | "cards" | null;
 	done: number;
 	total: number;
-	last: { at: string; checked: number; corrected: { name: string; statement: string; reason?: string }[]; error?: string } | null;
+	last: { at: string; checked: number; corrected: { name: string; statement: string; reason?: string }[]; error?: string; full?: boolean; cards?: number } | null;
 };
 
 export function useFactRecheck(onFinished: () => void) {
@@ -56,7 +56,7 @@ export function FactRecheckButton({ status, onStart }: { status: Status | null; 
 	const running = !!status?.running;
 	return (
 		<div className="graph-chrome-fade-in shrink-0 rounded-xl border bg-card/85 px-1 py-[3px] shadow-lg backdrop-blur">
-			<Hint label="Re-verify every graph fact and review card, fixing false ones (cheap model)" side="bottom">
+			<Hint label="Re-verify every graph fact, fixing false ones; cards built on a fixed fact are rechecked (cheap model)" side="bottom">
 				<button
 					type="button"
 					onClick={onStart}
@@ -103,18 +103,29 @@ export function FactRecheckProgress({ status }: { status: Status }) {
 	);
 }
 
+/** What a finished run did, in one line. */
+export function recheckSummary(result: NonNullable<Status["last"]>): string {
+	const cards = result.cards ?? 0;
+	const cardLine = result.full
+		? ` Every review card was rechecked (${cards}).`
+		: cards > 0
+			? ` ${cards} review card${cards === 1 ? " was" : "s were"} rechecked.`
+			: " Review cards keep their checks.";
+	const facts =
+		result.checked === 0
+			? "Facts were already checked in the last hour."
+			: result.corrected.length
+				? `Checked ${result.checked} facts; corrected ${result.corrected.length}.`
+				: `Checked ${result.checked} facts; all hold.`;
+	return facts + cardLine;
+}
+
 export function FactRecheckResult({ result, onDismiss }: { result: NonNullable<Status["last"]>; onDismiss: () => void }) {
 	return (
 		<div role="status" className="w-80 max-w-full rounded-xl border bg-card/95 p-3 text-xs shadow-lg backdrop-blur" data-testid="graph-recheck-result">
 			<div className="flex items-start gap-2">
 				<p className="min-w-0 flex-1 text-muted-foreground">
-					{result.error
-						? `Recheck stopped: ${result.error}`
-						: result.checked === 0
-							? "Facts were already checked in the last hour; review cards were rechecked."
-							: result.corrected.length
-								? `Checked ${result.checked} facts; corrected ${result.corrected.length}. Review cards were rechecked too.`
-								: `Checked ${result.checked} facts; all hold. Review cards were rechecked too.`}
+					{result.error ? `Recheck stopped: ${result.error}` : recheckSummary(result)}
 				</p>
 				<button type="button" onClick={onDismiss} aria-label="Dismiss" className="shrink-0 text-muted-foreground hover:text-foreground">
 					<XIcon className="size-3.5" />

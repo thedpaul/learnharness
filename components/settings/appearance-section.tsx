@@ -43,6 +43,7 @@ import { useAppearance } from "./appearance.tsx";
 import { playCue, setSoundEffectsEnabled, soundEffectsEnabled } from "@/components/sound-cues";
 import { FontMenuList } from "./model-menu";
 import { CommitInput, SettingsMenuTrigger, SettingsRow, ThinSelect, Toggle } from "./controls.tsx";
+import { RecheckEverything } from "./recheck-everything.tsx";
 
 /** The factory reading family — the DEFAULT row's identity (unset =
  *  this). Exported for tests. */
@@ -401,12 +402,15 @@ export function GraphSection({
 					onChange={(on) => onSectionChange({ ...graph, rendering: on })}
 				/>
 			</SettingsRow>
-			<SettingsRow label="Recheck facts on startup" hint="Graph facts and review cards, monthly · cheap slot" testid="graph-row-recheck">
+			<SettingsRow label="Recheck facts on startup" hint="Graph facts monthly, and cards built on a fixed fact · cheap slot" testid="graph-row-recheck">
 				<Toggle
 					checked={graph?.recheckOnStartup ?? false}
 					label="recheck facts on startup"
 					onChange={(on) => onSectionChange({ ...graph, recheckOnStartup: on })}
 				/>
+			</SettingsRow>
+			<SettingsRow label="Recheck everything" hint="Every fact and review card, from scratch · cheap slot" testid="graph-row-recheck-all">
+				<RecheckEverything />
 			</SettingsRow>
 			<SettingsRow
 				label="Extraction chunk budget"
