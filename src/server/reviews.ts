@@ -446,7 +446,7 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boo
 function heldReason(card: ReviewCard, check: ReviewCheck, cards: readonly ReviewCard[]): string | undefined {
 	if (check.verdict !== "duplicate") return check.reason;
 	const original = cards.find((c) => c.id === check.duplicateOf);
-	return original ? `repeats “${original.questionText.slice(0, 160)}” from ${original.chatTitle}` : check.reason;
+	return original ? `Same as “${original.questionText.slice(0, 160)}” in ${original.chatTitle}` : check.reason;
 }
 
 /** Cards the check held back (wrong answer key, unclear, a near-duplicate

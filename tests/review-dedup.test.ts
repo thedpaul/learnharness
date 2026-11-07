@@ -80,7 +80,7 @@ test("the checker sees the older deck; the newer repeat leaves the queue and its
 	assert.deepEqual([origQ.reviews, origQ.box], [1, 0], "the repeat's missed first answer counts for the older card");
 	assert.equal(status.total, 2);
 	assert.deepEqual(status.held.map((h) => [h.id, h.verdict]), [[repeat, "duplicate"]]);
-	assert.match(status.held[0]!.reason!, /repeats “What does temperature do to softmax\?” from Softmax/);
+	assert.match(status.held[0]!.reason!, /^Same as “What does temperature do to softmax\?” in Softmax$/);
 	assert.deepEqual(flaggedCards().map((f) => f.check.verdict), ["duplicate"]);
 	assert.equal(recordReview(repeat, [1], 50), null, "the repeat isn't reviewed on its own");
 	assert.ok(recordReview(orig, [1], 90));
