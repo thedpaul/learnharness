@@ -8,7 +8,6 @@
  * progress shows on the graph view like any recheck.
  */
 import { useCallback, useEffect, useState } from "react";
-import { useServerEvent } from "@/components/server-events";
 import { recheckSummary } from "@/components/fact-recheck";
 
 const buttonClass = "rounded-sm border border-border px-2.5 py-1 font-ui text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-50";
@@ -32,7 +31,14 @@ export function RecheckEverything() {
 			.catch(() => {});
 	}, []);
 	useEffect(() => read(), [read]);
-	useServerEvent("recheck-changed", read);
+	// Polled while a run is going (the settings dialog renders outside the
+	// server-events stream in places, so it doesn't rely on it).
+	const running = !!status?.running;
+	useEffect(() => {
+		if (!running) return;
+		const timer = setInterval(read, 1500);
+		return () => clearInterval(timer);
+	}, [running, read]);
 
 	const confirm = () => {
 		fetch("/api/graph/recheck?scope=1", { cache: "no-store" })
