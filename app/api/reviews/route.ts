@@ -3,7 +3,8 @@
  *  topic ?shuffle=1 mixes every due card in one random order (&cluster=1 keeps
  *  cards on the same concept together); ?count=1
  *  is the badges' due count only),
- *  POST one answer ({ card, selected: number[], confidence? }), DELETE
+ *  POST one answer ({ card, selected: number[], confidence? }; a practice
+ *  problem's self-grade is { card, gotIt: boolean, confidence? }), DELETE
  *  ?days=<n>[&topic=] undoes recent reviews (no days = all of them). */
 import { recordReview, resetReviews, reviewCounts, reviewStatus } from "@/src/server";
 
@@ -17,13 +18,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-	const body = (await request.json().catch(() => null)) as { card?: unknown; selected?: unknown; confidence?: unknown } | null;
+	const body = (await request.json().catch(() => null)) as { card?: unknown; selected?: unknown; gotIt?: unknown; confidence?: unknown } | null;
 	const selected = Array.isArray(body?.selected) ? body.selected.filter((n): n is number => Number.isInteger(n)) : null;
-	if (typeof body?.card !== "string" || !selected || selected.length === 0) {
+	const answer = typeof body?.gotIt === "boolean" ? body.gotIt : selected?.length ? selected : null;
+	if (typeof body?.card !== "string" || answer === null) {
 		return Response.json({ message: "Pick an answer" }, { status: 400 });
 	}
 	const confidence = typeof body.confidence === "number" && Number.isFinite(body.confidence) ? body.confidence : undefined;
-	const result = recordReview(body.card, selected, confidence);
+	const result = recordReview(body.card, answer, confidence);
 	if (!result) return Response.json({ message: "That question is gone (its session was deleted, or its check held it back)" }, { status: 404 });
 	return Response.json(result);
 }
