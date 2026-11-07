@@ -27,6 +27,7 @@ import { activeProblemOf } from "../../core/native-messages.ts";
 import type { LhMessage } from "../../core/native-messages.ts";
 import { concludeResult, invalidInputResult, problemResult } from "../tool-execute.ts";
 import { healEncodedArguments, healToolRecord } from "./heal.ts";
+import { startSessionTool, type StartSessionContext } from "./start-session.ts";
 
 
 /** The record-reading context the gates need (the plan-tools idiom). */
@@ -44,6 +45,9 @@ export interface PracticeToolContext {
 	 *  Each absent context (tests) = absent from the registry. */
 	graph?: GraphToolContext;
 	jobs?: JobToolContext;
+	/** The composition root's session factory: present = start_session
+	 *  (an unrelated topic opens a separate practice session). */
+	createSession?: StartSessionContext["createSession"];
 }
 
 /** TURN-SCOPED GATE STATE (the BKT incident, 2026-10-05): the gates used
@@ -245,5 +249,6 @@ export function practiceTools(ctx: PracticeToolContext): Record<string, AgentToo
 		...(jobs?.research ? { research: jobs.research } : {}),
 		...(jobs ? { pdf: jobs.pdf! } : {}),
 		...(ctx.graph ? proberGraphTools(ctx.graph) : {}),
+		...(ctx.createSession ? { start_session: startSessionTool({ kind: "practice", createSession: ctx.createSession }) } : {}),
 	});
 }
