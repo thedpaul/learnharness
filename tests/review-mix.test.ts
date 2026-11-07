@@ -114,7 +114,7 @@ test("mix: a topic's round takes in the due cards of topics sharing its field, l
 		// Question 0 of every lesson tests the same idea.
 		return cards.map((c) => ({ id: c.id, verdict: "ok" as const, notes: {}, concept: c.questionText.includes("question 0") ? "Shared idea" : `Own ${c.id}` }));
 	});
-	await kickReviewChecks();
+	await kickReviewChecks({ now: true });
 	const calls: { titles: string[]; known: string[] }[] = [];
 	setTopicFielder(async ({ topics, known }) => {
 		calls.push({ titles: topics.map((t) => t.title).sort(), known: known.map((k) => k.title) });
@@ -157,7 +157,7 @@ test("mix: a topic's round takes in the due cards of topics sharing its field, l
 	for (let i = 0; i < 2; i++) {
 		const g = globalThis as any;
 		console.log("DBG0", !!g.__lhReviewChecker?.running, g.__lhReviewChecker?.failedAt, reviewStatus.length);
-		await kickReviewChecks();
+		await kickReviewChecks({ now: true });
 		console.log("DBG1", stores.chatStore.listChats().map((c: any) => c.title + c.updatedAt));
 		await kickTopicFields();
 	}

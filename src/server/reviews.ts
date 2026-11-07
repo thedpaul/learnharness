@@ -16,13 +16,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { piEngineForSpec } from "../agent/models.ts";
-import { checkCards, type CardCheckResult } from "../agent/subagents/card-checker.ts";
+import { checkCards, findDuplicates, type CardCheckResult } from "../agent/subagents/card-checker.ts";
 import { fieldTopics } from "../agent/subagents/topic-fielder.ts";
 import { emit } from "../core/events.ts";
 import {
 	calibration,
 	checkedCard,
-	checkIsStale,
+	checkNeedsFullRecheck,
+	DUPLICATE_PASS_FROM,
 	deckCards,
 	dueCards,
 	duplicateAliases,
@@ -124,6 +125,19 @@ export function onFirstCount(fn: () => void): void {
 /** Test seam: a scripted checker replaces the model call. */
 type Checker = typeof checkCards;
 let checker: Checker = checkCards;
+/** Test seam: the deck-wide duplicate pass. */
+type DuplicateFinder = typeof findDuplicates;
+let duplicateFinder: DuplicateFinder = findDuplicates;
+export function setDuplicateFinder(fn: DuplicateFinder | null): void {
+	duplicateFinder = fn ?? findDuplicates;
+}
+
+/** New cards wait until their session has been quiet this long, so a
+ *  lesson's cards are checked together instead of one call per answer.
+ *  Opening Reviews checks them right away. They aren't due before
+ *  tomorrow, so the wait costs nothing. */
+const IDLE_MS = 10 * 60_000;
+const idleTimerKey = "__lhReviewIdleTimer";
 export function setReviewChecker(fn: Checker | null): void {
 	checker = fn ?? checkCards;
 	const slot = checkerSlot();
@@ -134,35 +148,103 @@ export function setReviewChecker(fn: Checker | null): void {
 /** Check every unchecked card, and re-check those an older checker passed,
  *  one session batch at a time. A paired phone leaves the re-checks to the
  *  computer (they arrive with the next sync). Never throws. */
-export function kickReviewChecks(): Promise<void> {
+export function kickReviewChecks(opts: { now?: boolean } = {}): Promise<void> {
 	const slot = checkerSlot();
 	if (slot.running) return slot.running;
 	if (slot.failedAt && Date.now() - slot.failedAt < RETRY_MS) return Promise.resolve();
 	const checks = readChecks();
 	const defer = deferToComputer();
-	return runChecks((c) => {
+	const now = Date.now();
+	const touched = new Map(stores.chatStore.listChats().map((c) => [c.id, Date.parse(c.updatedAt)]));
+	let wake = Infinity;
+	const run = runChecks((c) => {
 		const check = checks.get(c.id);
-		if (!check) return !defer || Date.now() - Date.parse(c.firstAnswer.at) > PHONE_DEFER_MS;
-		return !defer && checkIsStale(check);
-	});
+		if (check) return !defer && checkNeedsFullRecheck(check);
+		if (defer && now - Date.parse(c.firstAnswer.at) <= PHONE_DEFER_MS) return false;
+		const quietAt = (touched.get(c.chatId) ?? 0) + IDLE_MS;
+		if (opts.now || quietAt <= now) return true;
+		wake = Math.min(wake, quietAt);
+		return false;
+	}, undefined, undefined, { duplicatePass: !defer });
+	if (wake < Infinity) wakeAt(wake);
+	return run;
+}
+
+/** One timer for the session that goes quiet first; its kick finds the rest. */
+function wakeAt(at: number): void {
+	const g = globalThis as typeof globalThis & { [idleTimerKey]?: { at: number; timer: ReturnType<typeof setTimeout> } };
+	const current = g[idleTimerKey];
+	if (current && current.at <= at) return;
+	if (current) clearTimeout(current.timer);
+	const timer = setTimeout(() => {
+		g[idleTimerKey] = undefined;
+		void kickReviewChecks();
+	}, Math.max(0, at - Date.now()) + 1000);
+	timer.unref?.();
+	g[idleTimerKey] = { at, timer };
 }
 
 /**
- * The recheck (src/server/fact-check.ts): checked cards too — every card
- * whose last check is older than `before` (all of them without it) is
- * checked again; the newest check wins. `corrections` are the corrected
- * graph facts per session, so cards built on an old fact fail the check
- * (a session with corrections has all its cards rechecked).
+ * The recheck (src/server/fact-check.ts): the cards of every session with
+ * a corrected fact are checked again with the corrections in hand (a card
+ * built on the old fact fails); the newest check wins. Cards of sessions
+ * with nothing corrected keep their check — the same checker on the same
+ * card has nothing new to go on. Unchecked cards are checked too.
  */
-export async function recheckCards(opts: { before?: number; corrections?: Map<string, string[]>; onProgress?: (done: number, total: number) => void } = {}): Promise<void> {
+export async function recheckCards(opts: { corrections?: Map<string, string[]>; onProgress?: (done: number, total: number) => void } = {}): Promise<void> {
 	const slot = checkerSlot();
 	if (slot.running) await slot.running;
 	const checks = readChecks();
-	await runChecks((c) => {
-		const at = checks.get(c.id)?.at;
-		return !at || opts.before === undefined || Date.parse(at) < opts.before || !!opts.corrections?.has(c.chatId);
-	}, opts.corrections, opts.onProgress);
+	await runChecks((c) => !checks.has(c.id) || !!opts.corrections?.has(c.chatId), opts.corrections, opts.onProgress);
 	if (slot.lastError) throw new Error(slot.lastError);
+}
+
+/** The most cards one duplicate-pass call looks over (the checker's own
+ *  deck list has the same cap). */
+const DUPLICATE_PASS_MAX = 400;
+
+/** Bring checks made by the v4 checker up to date: their verdict, context
+ *  and notes stand; one deck-wide call per DUPLICATE_PASS_MAX cards finds
+ *  which of them repeat an older card. */
+async function duplicatePass(): Promise<void> {
+	const checks = readChecks();
+	const cards = allCards();
+	const upgrade = cards.filter((c) => checks.get(c.id)?.v === DUPLICATE_PASS_FROM);
+	if (upgrade.length === 0) return;
+	const byId = new Map(cards.map((c) => [c.id, c]));
+	const upgrading = new Set(upgrade.map((c) => c.id));
+	const deck = cards
+		.filter((c) => checks.get(c.id)?.verdict === "ok")
+		.map((c) => ({ id: c.id, question: c.questionText, ...(checks.get(c.id)!.concept ? { concept: checks.get(c.id)!.concept } : {}) }))
+		.sort((a, b) => (a.concept ?? "").localeCompare(b.concept ?? ""));
+	const repeats = new Map<string, string>();
+	if (deck.some((c) => upgrading.has(c.id)) && deck.length > 1) {
+		const engine = duplicateFinder === findDuplicates ? auditorEngine() : undefined;
+		for (let i = 0; i < deck.length; i += DUPLICATE_PASS_MAX) {
+			const part = deck.slice(i, i + DUPLICATE_PASS_MAX);
+			if (!part.some((c) => upgrading.has(c.id))) continue;
+			for (const pair of await duplicateFinder({ cards: part, engine })) {
+				// The newer card of the pair repeats the older one; only cards
+				// being upgraded change (newer ones were checked against the deck).
+				const [a, b] = [byId.get(pair.id)!, byId.get(pair.duplicateOf)!];
+				if (a.firstAnswer.at === b.firstAnswer.at) continue;
+				const [newer, older] = a.firstAnswer.at > b.firstAnswer.at ? [a, b] : [b, a];
+				if (!upgrading.has(newer.id)) continue;
+				const prev = repeats.get(newer.id);
+				if (!prev || byId.get(prev)!.firstAnswer.at > older.firstAnswer.at) repeats.set(newer.id, older.id);
+			}
+		}
+	}
+	const at = new Date().toISOString();
+	const lines = upgrade.map((c) => {
+		const { card: _c, at: _a, v: _v, ...rest } = checks.get(c.id)!;
+		const to = repeats.get(c.id);
+		return JSON.stringify({ card: c.id, at, v: REVIEW_CHECK_VERSION, ...rest, ...(to ? { verdict: "duplicate", duplicateOf: to } : {}) });
+	});
+	fs.mkdirSync(PATHS.data, { recursive: true });
+	fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
+	emit("reviews-changed", {});
+	if (repeats.size) emit("changes-changed", {});
 }
 
 /** A duplicate stands only against an OLDER card that exists (the older
@@ -180,55 +262,15 @@ function runChecks(
 	select: (card: ReviewCard) => boolean,
 	corrections?: Map<string, string[]>,
 	onProgress?: (done: number, total: number) => void,
+	opts: { duplicatePass?: boolean } = {},
 ): Promise<void> {
 	const slot = checkerSlot();
 	const run = (async () => {
 		try {
 			// Oldest first, so a repeat meets the card it repeats already checked.
 			const todo = allCards().filter(select).sort((a, b) => a.firstAnswer.at.localeCompare(b.firstAnswer.at));
-			if (todo.length === 0) return;
-			let done = 0;
-			onProgress?.(done, todo.length);
-			const engine = checker === checkCards ? auditorEngine() : undefined;
-			const checks = readChecks();
-			const concepts = knownConcepts(checks.values());
-			// The deck as the checker compares against it: every card now
-			// standing ok, kept current as this run's verdicts land.
-			const all = allCards();
-			const byId = new Map(all.map((c) => [c.id, c]));
-			const standing = new Map(all.filter((c) => checks.get(c.id)?.verdict === "ok").map((c) => [c.id, checks.get(c.id)!.concept]));
-			const byChat = new Map<string, ReviewCard[]>();
-			for (const c of todo) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
-			for (const [chatId, cards] of byChat) {
-				for (let i = 0; i < cards.length; i += BATCH) {
-					const batch = cards.slice(i, i + BATCH);
-					const inBatch = new Set(batch.map((c) => c.id));
-					const newest = batch.reduce((t, c) => (c.firstAnswer.at > t ? c.firstAnswer.at : t), "");
-					const existing = [...standing]
-						.filter(([id]) => !inBatch.has(id) && byId.get(id)!.firstAnswer.at < newest)
-						.map(([id, concept]) => ({ id, question: byId.get(id)!.questionText, ...(concept ? { concept } : {}) }));
-					const results = (await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId), concepts, existing }))
-						.map((r) => keepOldest(r, byId));
-					const at = new Date().toISOString();
-					const lines = results.map((r) =>
-						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, explanation: r.explanation, concept: r.concept, duplicateOf: r.duplicateOf, notes: r.notes }),
-					);
-					if (lines.length) {
-						fs.mkdirSync(PATHS.data, { recursive: true });
-						fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
-						emit("reviews-changed", {});
-						if (results.some((r) => r.verdict !== "ok")) emit("changes-changed", {});
-					}
-					for (const r of results) {
-						if (r.verdict === "ok") standing.set(r.id, r.concept);
-						else standing.delete(r.id);
-					}
-					// Later sessions in this run reuse the names just given.
-					for (const r of results) if (r.concept && !concepts.includes(r.concept)) concepts.push(r.concept);
-					done += batch.length;
-					onProgress?.(done, todo.length);
-				}
-			}
+			if (todo.length) await checkTodo(todo);
+			if (opts.duplicatePass) await duplicatePass();
 			slot.lastError = undefined;
 			slot.failedAt = undefined;
 		} catch (err) {
@@ -236,6 +278,50 @@ function runChecks(
 			slot.failedAt = Date.now();
 		}
 	})();
+	async function checkTodo(todo: ReviewCard[]) {
+		let done = 0;
+		onProgress?.(done, todo.length);
+		const engine = checker === checkCards ? auditorEngine() : undefined;
+		const checks = readChecks();
+		const concepts = knownConcepts(checks.values());
+		// The deck as the checker compares against it: every card now
+		// standing ok, kept current as this run's verdicts land.
+		const all = allCards();
+		const byId = new Map(all.map((c) => [c.id, c]));
+		const standing = new Map(all.filter((c) => checks.get(c.id)?.verdict === "ok").map((c) => [c.id, checks.get(c.id)!.concept]));
+		const byChat = new Map<string, ReviewCard[]>();
+		for (const c of todo) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
+		for (const [chatId, cards] of byChat) {
+			for (let i = 0; i < cards.length; i += BATCH) {
+				const batch = cards.slice(i, i + BATCH);
+				const inBatch = new Set(batch.map((c) => c.id));
+				const newest = batch.reduce((t, c) => (c.firstAnswer.at > t ? c.firstAnswer.at : t), "");
+				const existing = [...standing]
+					.filter(([id]) => !inBatch.has(id) && byId.get(id)!.firstAnswer.at < newest)
+					.map(([id, concept]) => ({ id, question: byId.get(id)!.questionText, ...(concept ? { concept } : {}) }));
+				const results = (await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId), concepts, existing }))
+					.map((r) => keepOldest(r, byId));
+				const at = new Date().toISOString();
+				const lines = results.map((r) =>
+					JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, explanation: r.explanation, concept: r.concept, duplicateOf: r.duplicateOf, notes: r.notes }),
+				);
+				if (lines.length) {
+					fs.mkdirSync(PATHS.data, { recursive: true });
+					fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
+					emit("reviews-changed", {});
+					if (results.some((r) => r.verdict !== "ok")) emit("changes-changed", {});
+				}
+				for (const r of results) {
+					if (r.verdict === "ok") standing.set(r.id, r.concept);
+					else standing.delete(r.id);
+				}
+				// Later sessions in this run reuse the names just given.
+				for (const r of results) if (r.concept && !concepts.includes(r.concept)) concepts.push(r.concept);
+				done += batch.length;
+				onProgress?.(done, todo.length);
+			}
+		}
+	}
 	// Cleared after it settles, not in a finally: a run with nothing to do
 	// (or no model) ends synchronously, and a finally would clear the slot
 	// before this assignment, leaving a settled run there for good — every
@@ -393,7 +479,8 @@ export function reviewCounts(now = new Date()): { due: number; total: number; se
  *  `cluster` cards testing the same concept come side by side in it. */
 export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boolean; shuffle?: boolean; cluster?: boolean; limit?: number } = {}): ReviewStatus {
 	const { cards, checks, ledger, aliases, events, ok, due, settings, doneToday, left } = deck(now);
-	void kickReviewChecks().then(() => kickTopicFields());
+	// Reviews is open: new cards are checked now, not when their session goes quiet.
+	void kickReviewChecks({ now: true }).then(() => kickTopicFields());
 	const fields = readFields();
 	const topics = new Map<string, ReviewTopic>();
 	for (const c of ok) {

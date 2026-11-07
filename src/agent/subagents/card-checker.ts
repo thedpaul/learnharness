@@ -177,3 +177,50 @@ export async function checkCards(opts: {
 			notes: Object.fromEntries(c.notes.filter((n) => n.note.trim()).map((n) => [String(n.option), n.note.trim()])),
 		}));
 }
+
+const dedupSchema = Type.Object({
+	duplicates: Type.Array(
+		Type.Object({
+			id: Type.String({ description: "The repeating card's id, exactly as given." }),
+			duplicateOf: Type.String({ description: "The id of the card it repeats, exactly as given." }),
+		}),
+		{ description: "One entry per pair of cards that ask essentially the same question; empty when there are none." },
+	),
+});
+
+const DEDUP_SYSTEM = `You look over a learner's spaced-review deck for near-duplicate flashcards. Every card in the list was already checked on its own; your only job is to find repeats.
+
+Two cards are duplicates when they ask essentially the same question — the same fact or reasoning, so that answering one means you'd answer the other. Testing the same concept from another angle, in another case, or one step further is not a duplicate: keep both.
+
+Cards are listed by concept, but repeats can sit under different concept names, so read the whole list. For every pair you find, give one card's id and the id of the card it repeats. Submit once, with an empty list if there are no repeats.`;
+
+/** Upgrade pass (check v5): the deck's questions in one call, repeats out.
+ *  Used for cards an older checker already passed, so the rest of their
+ *  check (verdict, context, notes) stands without being redone. */
+export async function findDuplicates(opts: {
+	cards: { id: string; question: string; concept?: string }[];
+	engine: PiEngine | undefined;
+	signal?: AbortSignal;
+	onStep?: (usage: Usage, model: string) => void;
+}): Promise<{ id: string; duplicateOf: string }[]> {
+	const ids = new Set(opts.cards.map((c) => c.id));
+	const list = [...opts.cards]
+		.sort((a, b) => (a.concept ?? "").localeCompare(b.concept ?? ""))
+		.map((c) => `- [${c.id}]${c.concept ? ` (${c.concept})` : ""} ${oneLine(c.question)}`)
+		.join("\n");
+	const value = await runSubmitAgent<Static<typeof dedupSchema>>({
+		role: "auditor",
+		toolName: "submit_duplicates",
+		toolDescription: "Submit every pair of near-duplicate cards (an empty list if none).",
+		parameters: dedupSchema,
+		fill: (input) => input as Static<typeof dedupSchema>,
+		systemPrompt: DEDUP_SYSTEM,
+		prompt: `## The deck\n${list}`,
+		engine: opts.engine,
+		signal: opts.signal,
+		onStep: (usage, model) => opts.onStep?.(usage, model),
+		neverSubmitted: "the duplicate check never submitted its result",
+		validate: () => null,
+	});
+	return value.duplicates.filter((d) => ids.has(d.id) && ids.has(d.duplicateOf) && d.id !== d.duplicateOf);
+}
