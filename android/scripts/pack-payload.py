@@ -18,6 +18,7 @@ ap.add_argument("--assets", required=True)
 ap.add_argument("--jnilibs", required=True)
 ap.add_argument("--npm-cache", required=True)
 ap.add_argument("--version", required=True)
+ap.add_argument("--abi", default="arm64-v8a")
 a = ap.parse_args()
 
 S = a.standalone
@@ -48,8 +49,11 @@ def version_of(pkg):
         return json.load(f)["version"]
 
 os.makedirs(a.npm_cache, exist_ok=True)
-for base, android in (("@napi-rs/canvas", "@napi-rs/canvas-android-arm64"),
-                      ("@resvg/resvg-js", "@resvg/resvg-js-android-arm64")):
+# x86_64 (the emulator test build): neither package ships an Android x64
+# build, so they stay out — PDF page rendering and SVG rasterizing fail there.
+ADDON = {"arm64-v8a": "android-arm64", "x86_64": "android-x64"}[a.abi]
+for base, android in (() if a.abi == "x86_64" else (("@napi-rs/canvas", "@napi-rs/canvas-android-arm64"),
+                      ("@resvg/resvg-js", "@resvg/resvg-js-android-arm64"))):
     spec = f"{android}@{version_of(base)}"
     tgz = subprocess.run(["npm", "pack", spec, "--silent"], cwd=a.npm_cache, check=True,
                          capture_output=True, text=True).stdout.strip().splitlines()[-1]
@@ -78,7 +82,7 @@ for dirpath, dirnames, filenames in os.walk(S):
         if os.path.islink(full):
             continue
         rel = os.path.relpath(full, S)
-        if "android-arm64" not in fn:
+        if ADDON not in fn:
             sys.exit(f"[pack] REFUSING: non-Android native addon in payload: {rel}")
         lib = "libaddon_" + fn.replace(".node", "").replace(".", "_").replace("-", "_") + ".so"
         shutil.move(full, os.path.join(a.jnilibs, lib))
