@@ -189,13 +189,14 @@ function wakeAt(at: number): void {
  * a corrected fact are checked again with the corrections in hand (a card
  * built on the old fact fails); the newest check wins. Cards of sessions
  * with nothing corrected keep their check — the same checker on the same
- * card has nothing new to go on. Unchecked cards are checked too.
+ * card has nothing new to go on. Unchecked cards are checked too. `all`
+ * (Settings → Graph → "Recheck everything") checks every card again.
  */
-export async function recheckCards(opts: { corrections?: Map<string, string[]>; onProgress?: (done: number, total: number) => void } = {}): Promise<void> {
+export async function recheckCards(opts: { corrections?: Map<string, string[]>; all?: boolean; onProgress?: (done: number, total: number) => void } = {}): Promise<void> {
 	const slot = checkerSlot();
 	if (slot.running) await slot.running;
 	const checks = readChecks();
-	await runChecks((c) => !checks.has(c.id) || !!opts.corrections?.has(c.chatId), opts.corrections, opts.onProgress);
+	await runChecks((c) => !!opts.all || !checks.has(c.id) || !!opts.corrections?.has(c.chatId), opts.corrections, opts.onProgress);
 	if (slot.lastError) throw new Error(slot.lastError);
 }
 
@@ -245,6 +246,11 @@ async function duplicatePass(): Promise<void> {
 	fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
 	emit("reviews-changed", {});
 	if (repeats.size) emit("changes-changed", {});
+}
+
+/** Every card in the decks' sources, checked or not (the full recheck's scope). */
+export function reviewCardCount(): number {
+	return allCards().length;
 }
 
 /** A duplicate stands only against an OLDER card that exists (the older

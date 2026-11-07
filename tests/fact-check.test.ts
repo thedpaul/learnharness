@@ -101,6 +101,17 @@ test("recheck: false graph facts are corrected, and the cards of their sessions 
 	await runRecheck();
 	assert.equal(factCalls.length, 1);
 	assert.equal(cardCalls.length, 3);
+
+	// Recheck everything: every fact and every card again, whatever was checked when.
+	const { recheckScope } = await import("../src/server/fact-check.ts");
+	assert.deepEqual(recheckScope(), { facts: 2, cards: 2 });
+	await runRecheck({ full: true });
+	assert.equal(factCalls.length, 2);
+	assert.deepEqual(factCalls[1]!.sort(), ["n_pluto", "n_sun"]);
+	assert.deepEqual(cardCalls.slice(3).flatMap((c) => c.ids).sort(), [`${chat.id}:q1`, `${other.id}:q9`].sort());
+	const full = recheckStatus().last!;
+	assert.equal(full.full, true);
+	assert.equal(full.cards, 2);
 	setFactChecker(null);
 	setReviewChecker(null);
 });
