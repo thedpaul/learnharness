@@ -16,14 +16,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { piEngineForSpec } from "../agent/models.ts";
-import { checkCards } from "../agent/subagents/card-checker.ts";
+import { checkCards, type CardCheckResult } from "../agent/subagents/card-checker.ts";
 import { fieldTopics } from "../agent/subagents/topic-fielder.ts";
 import { emit } from "../core/events.ts";
 import {
 	calibration,
 	checkedCard,
 	checkIsStale,
+	deckCards,
 	dueCards,
+	duplicateAliases,
+	foldDuplicates,
 	extractReviewCards,
 	isCorrect,
 	knownConcepts,
@@ -162,6 +165,17 @@ export async function recheckCards(opts: { before?: number; corrections?: Map<st
 	if (slot.lastError) throw new Error(slot.lastError);
 }
 
+/** A duplicate stands only against an OLDER card that exists (the older
+ *  one is kept); anything else the checker said is an ordinary pass. */
+function keepOldest(r: CardCheckResult, byId: ReadonlyMap<string, ReviewCard>): CardCheckResult {
+	if (r.verdict !== "duplicate") return r;
+	const card = byId.get(r.id);
+	const original = r.duplicateOf ? byId.get(r.duplicateOf) : undefined;
+	if (card && original && original.id !== card.id && original.firstAnswer.at < card.firstAnswer.at) return r;
+	const { duplicateOf: _d, ...rest } = r;
+	return { ...rest, verdict: "ok" };
+}
+
 function runChecks(
 	select: (card: ReviewCard) => boolean,
 	corrections?: Map<string, string[]>,
@@ -170,27 +184,44 @@ function runChecks(
 	const slot = checkerSlot();
 	const run = (async () => {
 		try {
-			const todo = allCards().filter(select);
+			// Oldest first, so a repeat meets the card it repeats already checked.
+			const todo = allCards().filter(select).sort((a, b) => a.firstAnswer.at.localeCompare(b.firstAnswer.at));
 			if (todo.length === 0) return;
 			let done = 0;
 			onProgress?.(done, todo.length);
 			const engine = checker === checkCards ? auditorEngine() : undefined;
-			const concepts = knownConcepts(readChecks().values());
+			const checks = readChecks();
+			const concepts = knownConcepts(checks.values());
+			// The deck as the checker compares against it: every card now
+			// standing ok, kept current as this run's verdicts land.
+			const all = allCards();
+			const byId = new Map(all.map((c) => [c.id, c]));
+			const standing = new Map(all.filter((c) => checks.get(c.id)?.verdict === "ok").map((c) => [c.id, checks.get(c.id)!.concept]));
 			const byChat = new Map<string, ReviewCard[]>();
 			for (const c of todo) byChat.set(c.chatId, [...(byChat.get(c.chatId) ?? []), c]);
 			for (const [chatId, cards] of byChat) {
 				for (let i = 0; i < cards.length; i += BATCH) {
 					const batch = cards.slice(i, i + BATCH);
-					const results = await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId), concepts });
+					const inBatch = new Set(batch.map((c) => c.id));
+					const newest = batch.reduce((t, c) => (c.firstAnswer.at > t ? c.firstAnswer.at : t), "");
+					const existing = [...standing]
+						.filter(([id]) => !inBatch.has(id) && byId.get(id)!.firstAnswer.at < newest)
+						.map(([id, concept]) => ({ id, question: byId.get(id)!.questionText, ...(concept ? { concept } : {}) }));
+					const results = (await checker({ cards: batch, sessionTitle: batch[0]!.chatTitle, engine, corrections: corrections?.get(chatId), concepts, existing }))
+						.map((r) => keepOldest(r, byId));
 					const at = new Date().toISOString();
 					const lines = results.map((r) =>
-						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, explanation: r.explanation, concept: r.concept, notes: r.notes }),
+						JSON.stringify({ card: r.id, at, v: REVIEW_CHECK_VERSION, verdict: r.verdict, reason: r.reason, context: r.context, explanation: r.explanation, concept: r.concept, duplicateOf: r.duplicateOf, notes: r.notes }),
 					);
 					if (lines.length) {
 						fs.mkdirSync(PATHS.data, { recursive: true });
 						fs.appendFileSync(CHECKS(), `${lines.join("\n")}\n`);
 						emit("reviews-changed", {});
 						if (results.some((r) => r.verdict !== "ok")) emit("changes-changed", {});
+					}
+					for (const r of results) {
+						if (r.verdict === "ok") standing.set(r.id, r.concept);
+						else standing.delete(r.id);
 					}
 					// Later sessions in this run reuse the names just given.
 					for (const r of results) if (r.concept && !concepts.includes(r.concept)) concepts.push(r.concept);
@@ -333,13 +364,16 @@ export interface ReviewStatus {
 function deck(now: Date) {
 	const cards = allCards();
 	const checks = readChecks();
-	const events = readLedger();
-	const ok = cards.filter((c) => checks.get(c.id)?.verdict === "ok").map((c) => checkedCard(c, checks.get(c.id)));
+	const ledger = readLedger();
+	const aliases = duplicateAliases(checks);
+	const ok = deckCards(cards, checks, aliases);
+	// A near-duplicate's answers count toward the card standing for it.
+	const events = foldDuplicates(cards, ledger, aliases);
 	const settings = reviewSettingsOf(stores.settingsStore.readSettings());
-	const doneToday = reviewsToday(events, now);
+	const doneToday = reviewsToday(ledger, now);
 	/** What the daily limit still allows today (Infinity = no limit). */
 	const left = settings.maxPerDay > 0 ? Math.max(0, settings.maxPerDay - doneToday) : Infinity;
-	return { cards, checks, events, ok, due: dueCards(ok, events, now), settings, doneToday, left };
+	return { cards, checks, ledger, aliases, events, ok, due: dueCards(ok, events, now), settings, doneToday, left };
 }
 
 /** The sidebar and home badges: what can be reviewed now (the daily limit applied). */
@@ -355,7 +389,7 @@ export function reviewCounts(now = new Date()): { due: number; total: number; se
  *  topic, `shuffle` puts every due card in one random order, and with
  *  `cluster` cards testing the same concept come side by side in it. */
 export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boolean; shuffle?: boolean; cluster?: boolean; limit?: number } = {}): ReviewStatus {
-	const { cards, checks, events, ok, due, settings, doneToday, left } = deck(now);
+	const { cards, checks, ledger, aliases, events, ok, due, settings, doneToday, left } = deck(now);
 	void kickReviewChecks().then(() => kickTopicFields());
 	const fields = readFields();
 	const topics = new Map<string, ReviewTopic>();
@@ -384,8 +418,8 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boo
 		pending: cards.filter((c) => !checks.has(c.id)).length,
 		checkError: checkerSlot().lastError ?? null,
 		held: inTopic(cards)
-			.filter((c) => checks.has(c.id) && checks.get(c.id)!.verdict !== "ok")
-			.map((c) => ({ id: c.id, chatTitle: c.chatTitle, questionText: c.questionText, verdict: checks.get(c.id)!.verdict, reason: checks.get(c.id)!.reason })),
+			.filter((c) => checks.has(c.id) && checks.get(c.id)!.verdict !== "ok" && (checks.get(c.id)!.verdict !== "duplicate" || aliases.has(c.id)))
+			.map((c) => ({ id: c.id, chatTitle: c.chatTitle, questionText: c.questionText, verdict: checks.get(c.id)!.verdict, reason: heldReason(c, checks.get(c.id)!, cards) })),
 		topics: [...topics.values()].sort((a, b) => b.due - a.due || b.total - a.total || a.title.localeCompare(b.title)),
 		queue: allowed.map((c) => ({
 			id: c.id,
@@ -399,17 +433,32 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boo
 			reviews: c.schedule.reviews,
 		})),
 		calibration: calibration(rated),
-		activity: [...cards.map((c) => c.firstAnswer.at), ...events.map((e) => e.at)],
+		activity: [...cards.map((c) => c.firstAnswer.at), ...ledger.map((e) => e.at)],
 	};
 }
 
-/** Cards the check held back (wrong answer key, unclear), with the check
- *  time — the Changes page and the session notes (changes.ts). */
+/** Why a card is out of the queue: the check's reason, or for a
+ *  duplicate the question it repeats. */
+function heldReason(card: ReviewCard, check: ReviewCheck, cards: readonly ReviewCard[]): string | undefined {
+	if (check.verdict !== "duplicate") return check.reason;
+	const original = cards.find((c) => c.id === check.duplicateOf);
+	return original ? `repeats “${original.questionText.slice(0, 160)}” from ${original.chatTitle}` : check.reason;
+}
+
+/** Cards the check held back (wrong answer key, unclear, a near-duplicate
+ *  of an older card), with the check time — the Changes page and the
+ *  session notes (changes.ts). */
 export function flaggedCards(): { card: ReviewCard; check: ReviewCheck }[] {
 	const checks = readChecks();
-	return allCards()
-		.filter((c) => checks.has(c.id) && checks.get(c.id)!.verdict !== "ok")
-		.map((c) => ({ card: c, check: checks.get(c.id)! }));
+	const aliases = duplicateAliases(checks);
+	const cards = allCards();
+	return cards
+		.filter((c) => checks.has(c.id) && checks.get(c.id)!.verdict !== "ok" && (checks.get(c.id)!.verdict !== "duplicate" || aliases.has(c.id)))
+		.map((c) => {
+			const check = checks.get(c.id)!;
+			const reason = heldReason(c, check, cards);
+			return { card: c, check: reason ? { ...check, reason } : check };
+		});
 }
 
 export type ReviewResult = {
@@ -424,9 +473,10 @@ export type ReviewResult = {
 /** Grade one review and append it to the ledger. null = unknown card. */
 export function recordReview(cardId: string, selected: number[], confidence: number | undefined, now = new Date()): ReviewResult | null {
 	const checks = readChecks();
-	const raw = allCards().find((c) => c.id === cardId);
-	if (!raw || checks.get(cardId)?.verdict !== "ok") return null;
-	const card = checkedCard(raw, checks.get(cardId));
+	const aliases = duplicateAliases(checks);
+	const cards = allCards();
+	const card = deckCards(cards.filter((c) => c.id === cardId), checks, aliases)[0];
+	if (!card) return null;
 	const correct = isCorrect(selected, card.correctIndices);
 	const event: ReviewEvent = {
 		card: card.id,
@@ -437,7 +487,7 @@ export function recordReview(cardId: string, selected: number[], confidence: num
 	fs.mkdirSync(PATHS.data, { recursive: true });
 	fs.appendFileSync(LEDGER(), `${JSON.stringify(event)}\n`);
 	emit("reviews-changed", {});
-	const schedule = scheduleCard(card, readLedger(), now);
+	const schedule = scheduleCard(card, foldDuplicates(cards, readLedger(), aliases), now);
 	return {
 		correct,
 		correctIndices: card.correctIndices,

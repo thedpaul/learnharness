@@ -26,7 +26,7 @@ export type Change =
 			chatTitle: string;
 			toolCallId: string;
 			questionText: string;
-			verdict: "wrong" | "unclear";
+			verdict: "wrong" | "unclear" | "duplicate";
 			reason?: string;
 	  }
 	| { id: string; kind: "fact"; at: string; seen: boolean; nodeId: string; name: string; statement: string; was: string; reason?: string };
@@ -102,7 +102,7 @@ export function listChanges(opts: { chatId?: string } = {}): { unseen: number; i
 				chatTitle: card.chatTitle,
 				toolCallId: card.id.slice(card.chatId.length + 1),
 				questionText: card.questionText,
-				verdict: check.verdict as "wrong" | "unclear",
+				verdict: check.verdict as "wrong" | "unclear" | "duplicate",
 				...(check.reason ? { reason: check.reason } : {}),
 			};
 		});

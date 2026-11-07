@@ -316,10 +316,11 @@ export function parseReviewLedger(text: string): ReviewEvent[] {
 /** Bump to re-check every card (a better checker, a new rule). An older
  *  check keeps its card in the deck until the re-check replaces it; a
  *  check from a newer build is ignored. v2: notes in LaTeX. v3: the
- *  explanation rewritten for shuffled options. */
-export const REVIEW_CHECK_VERSION = 4;
+ *  explanation rewritten for shuffled options. v4: the concept. v5:
+ *  near-duplicates of an older card. */
+export const REVIEW_CHECK_VERSION = 5;
 
-export type ReviewVerdict = "ok" | "wrong" | "unclear";
+export type ReviewVerdict = "ok" | "wrong" | "unclear" | "duplicate";
 
 /** One review-checks.jsonl line; per card the highest version wins, then the newest. */
 export interface ReviewCheck {
@@ -337,6 +338,8 @@ export interface ReviewCheck {
 	explanation?: string;
 	/** The concept the card tests, a short name shared across topics (v4+). */
 	concept?: string;
+	/** A "duplicate" card: the older card it repeats (v5+). */
+	duplicateOf?: string;
 }
 
 export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
@@ -347,7 +350,7 @@ export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
 			const c = JSON.parse(line) as Partial<ReviewCheck>;
 			if (typeof c.card !== "string" || typeof c.at !== "string") continue;
 			if (typeof c.v !== "number" || c.v < 1 || c.v > REVIEW_CHECK_VERSION) continue;
-			if (c.verdict !== "ok" && c.verdict !== "wrong" && c.verdict !== "unclear") continue;
+			if (c.verdict !== "ok" && c.verdict !== "wrong" && c.verdict !== "unclear" && c.verdict !== "duplicate") continue;
 			const prev = out.get(c.card);
 			if (prev && (prev.v > c.v || (prev.v === c.v && prev.at > c.at))) continue;
 			out.set(c.card, {
@@ -360,6 +363,7 @@ export function parseReviewChecks(text: string): Map<string, ReviewCheck> {
 				...(c.notes && typeof c.notes === "object" ? { notes: c.notes } : {}),
 				...(typeof c.explanation === "string" && c.explanation.trim() ? { explanation: c.explanation.trim() } : {}),
 				...(typeof c.concept === "string" && c.concept.trim() ? { concept: c.concept.trim() } : {}),
+				...(typeof c.duplicateOf === "string" && c.duplicateOf ? { duplicateOf: c.duplicateOf } : {}),
 			});
 		} catch {
 			/* a torn line: skip */
@@ -439,6 +443,48 @@ export function mixedOrder<T>(cards: readonly T[], seed: string): T[] {
 
 /** The concept names in use, most used first (the checker reuses them so
  *  cards from different topics land on the same name). */
+/** Duplicate card → the card that stands for it in the deck: its chain of
+ *  duplicateOf followed to an "ok" card. A duplicate whose chain ends
+ *  anywhere else (a held or missing card, a loop) has nothing standing for
+ *  it, so it is absent here and reviewed as itself. */
+export function duplicateAliases(checks: ReadonlyMap<string, ReviewCheck>): Map<string, string> {
+	const out = new Map<string, string>();
+	for (const [id, check] of checks) {
+		if (check.verdict !== "duplicate") continue;
+		const seen = new Set([id]);
+		let at = check.duplicateOf;
+		while (at && !seen.has(at) && checks.get(at)?.verdict === "duplicate") {
+			seen.add(at);
+			at = checks.get(at)!.duplicateOf;
+		}
+		if (at && !seen.has(at) && checks.get(at)?.verdict === "ok") out.set(id, at);
+	}
+	return out;
+}
+
+/** The cards the deck holds: "ok" ones, and duplicates nothing stands for. */
+export function deckCards(cards: readonly ReviewCard[], checks: ReadonlyMap<string, ReviewCheck>, aliases: ReadonlyMap<string, string>): ReviewCard[] {
+	return cards
+		.filter((c) => {
+			const v = checks.get(c.id)?.verdict;
+			return v === "ok" || (v === "duplicate" && !aliases.has(c.id));
+		})
+		.map((c) => checkedCard(c, checks.get(c.id)));
+}
+
+/** The review history with duplicates folded into the card standing for
+ *  them: their reviews, and their first answer from the lesson, count as
+ *  answers to it. */
+export function foldDuplicates(cards: readonly ReviewCard[], events: readonly ReviewEvent[], aliases: ReadonlyMap<string, string>): ReviewEvent[] {
+	if (aliases.size === 0) return [...events];
+	const folded = events.map((e) => (aliases.has(e.card) ? { ...e, card: aliases.get(e.card)! } : e));
+	for (const c of cards) {
+		const to = aliases.get(c.id);
+		if (to) folded.push({ ...c.firstAnswer, card: to });
+	}
+	return folded;
+}
+
 export function knownConcepts(checks: Iterable<ReviewCheck>, max = 150): string[] {
 	const counts = new Map<string, { name: string; n: number }>();
 	for (const c of checks) {

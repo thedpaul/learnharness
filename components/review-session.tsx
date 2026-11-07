@@ -286,7 +286,7 @@ export function ReviewSession() {
 														<ToolContentResponse>{h.questionText}</ToolContentResponse>
 													</div>
 													<div className="mt-1">
-														<NoteMarkdown>{`${h.verdict === "wrong" ? "Wrong answer key" : "Unclear"}${h.reason ? `: ${h.reason}` : ""}`}</NoteMarkdown>
+														<NoteMarkdown>{`${h.verdict === "wrong" ? "Wrong answer key" : h.verdict === "duplicate" ? "Repeats another card" : "Unclear"}${h.reason ? `: ${h.reason}` : ""}`}</NoteMarkdown>
 													</div>
 												</li>
 											))}

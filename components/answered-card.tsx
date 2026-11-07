@@ -57,7 +57,9 @@ function CheckFlag({ flag }: { flag: Extract<Change, { kind: "card" }> }) {
 			)}
 			<div className="min-w-0 flex-1">
 				<NoteMarkdown>
-					{`${flag.verdict === "wrong" ? "A later check found this question's marked answer wrong" : "A later check found this question unclear"}${flag.reason ? `: ${flag.reason}` : "."} It's kept out of your reviews.`}
+					{flag.verdict === "duplicate"
+						? `This question ${flag.reason ?? "repeats an earlier card"}. That card stands for it in your reviews, and your answers here count toward it.`
+						: `${flag.verdict === "wrong" ? "A later check found this question's marked answer wrong" : "A later check found this question unclear"}${flag.reason ? `: ${flag.reason}` : "."} It's kept out of your reviews.`}
 				</NoteMarkdown>
 			</div>
 		</div>
