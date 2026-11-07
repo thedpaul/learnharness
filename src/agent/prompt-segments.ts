@@ -39,8 +39,9 @@ const PROMPTS_DIR = path.join(PATHS.root, "src", "agent", "prompts");
  *  and the prompt-refinement round of 2026-10-07) — personality, the
  *  truth contract, and the thinking-fields doctrine are ONE law across
  *  every agent. The question/confidence/file mechanics stay out
- *  (practice has no such tools). */
-const PRACTICE_SHARED_FRAGMENTS = ["10-voice.md", "15-accuracy.md", "16-mental-model.md", "40-formatting.md"];
+ *  (practice has no such tools). NEW TOPICS (owner, 2026-11-07): an
+ *  unrelated topic opens a separate session in every kind. */
+const PRACTICE_SHARED_FRAGMENTS = ["10-voice.md", "15-accuracy.md", "16-mental-model.md", "40-formatting.md", "50-new-topics.md"];
 
 /** Absolute path for an override file (unchecked — validate first). */
 function overrideFileFor(segmentPath: string): string {

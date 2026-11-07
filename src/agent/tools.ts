@@ -17,6 +17,7 @@ import type { JobRecord } from "../core/contracts.ts";
 import type { JobStore } from "../core/ports.ts";
 import { jobTools, type DemoInput, type PdfInput, type ResearchInput, type VisualInput } from "./tools/jobs.ts";
 import { planTools, type PlanToolContext } from "./tools/plan.ts";
+import { startSessionTool, type StartSessionContext } from "./tools/start-session.ts";
 import { probeDoneTool, type ProbeDoneContext } from "./tools/probe.ts";
 import { proberGraphTools } from "./tools/graph.ts";
 import { readTool } from "./tools/read.ts";
@@ -277,6 +278,9 @@ export interface ProberToolContext extends ProbeDoneContext {
 	 *  master switch AND the agent.graphTools toggle (settings-resolution).
 	 *  Absent = the gate is closed, no map tools (tests drive this seam). */
 	graphStore?: GraphStore;
+	/** The composition root's session factory: present = start_session is
+	 *  registered (an unrelated topic opens a separate session). */
+	createSession?: StartSessionContext["createSession"];
 }
 
 /** The prober's tool set: probe quiz (no nodeId) + ask + the learner-fs
@@ -340,6 +344,7 @@ export function createProberTools(
 				...(ctx.graphStore
 					? proberGraphTools({ chatStore: ctx.chatStore, graphStore: ctx.graphStore })
 					: {}),
+				...(ctx.createSession ? { start_session: startSessionTool({ kind: "teach", createSession: ctx.createSession }) } : {}),
 				...done,
 			},
 				withoutMechanics(enabled),
@@ -401,6 +406,9 @@ export interface TeacherToolContext extends PlanToolContext {
 	spawn: (job: JobRecord, input: ResearchInput | DemoInput | VisualInput | PdfInput) => void;
 	/** Retained search-status seam; research dispatch is available keylessly. */
 	searchAvailable?: () => boolean;
+	/** The composition root's session factory: present = start_session is
+	 *  registered (an unrelated topic opens a separate session). */
+	createSession?: StartSessionContext["createSession"];
 }
 
 /**
@@ -463,6 +471,7 @@ export function createTeacherTools(
 			show_image: createShowImageTool(ctx),
 			...planTools(ctx),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
+			...(ctx.createSession ? { start_session: startSessionTool({ kind: "teach", createSession: ctx.createSession }) } : {}),
 		},
 		withoutMechanics(enabled),
 		),

@@ -6,6 +6,7 @@ import { VisualCard } from "@/components/artifacts/visual-card";
 import { ImageCard } from "@/components/artifacts/image-card";
 import { ProbeDoneCard } from "@/components/artifacts/probe-done-card";
 import { ToolCallCard } from "@/components/artifacts/tool-call-card";
+import { StartSessionCard } from "@/components/artifacts/start-session-card";
 import { ProblemCard, ConcludeCard } from "@/components/practice-cards";
 
 /**
@@ -53,4 +54,7 @@ export const artifactRenderers: Record<string, ComponentType<ArtifactPartProps>>
 	// discipline (their results are pre-formatted strings too).
 	list_sessions: ToolCallCard,
 	list_propositions: ToolCallCard,
+	// An unrelated topic's separate session (owner, 2026-11-07): the card
+	// switches the learner there when the result arrives live.
+	start_session: StartSessionCard,
 };

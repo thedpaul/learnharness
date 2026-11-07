@@ -5,6 +5,7 @@ import { deleteChatTraces, type ChatDeleteMode, type ChatDeletionStats } from ".
 import { titleFromPrompt } from "../core/contracts.ts";
 import { graphRevision } from "./graph.ts";
 import { stores } from "./stores.ts";
+import { readSettings } from "../store/settings.ts";
 import { isTurnRunning } from "./turn-liveness.ts";
 import { clearTurnFailure } from "./turn-runs.ts";
 import { discardChatDeliveries } from "./jobs.ts";
@@ -23,6 +24,24 @@ import { discardChatDeliveries } from "./jobs.ts";
 
 export const { createChat, getChat, listChats } = stores.chatStore;
 export { titleFromPrompt };
+
+/** A new session as the learner gets it: the record plus the session's own
+ *  model, stamped verbatim from the STRONG slot (PER-SESSION MODELS, owner
+ *  2026-09-28 — from here the strong slot never reaches this session
+ *  again). No strong slot configured (fresh BYOK boot) → no stamp; the
+ *  turn gate's 503 models_not_configured envelope refuses honestly. Shared
+ *  by POST /api/chats and the agents' start_session tool. */
+export function createSession(title: string, kind?: "practice") {
+	const chat = createChat(titleFromPrompt(title || "Untitled session"), kind);
+	const strong = readSettings()?.models?.strong;
+	if (strong?.model) {
+		stores.chatStore.saveSettings(chat.id, {
+			model: { provider: strong.model.provider, id: strong.model.id },
+			thinkingLevel: strong.thinkingLevel,
+		});
+	}
+	return chat;
+}
 export type { ChatDeleteMode, ChatDeletionStats } from "../core/graph-deletion.ts";
 
 /** How long the wind-down wait may take before the caller gets a retryable
