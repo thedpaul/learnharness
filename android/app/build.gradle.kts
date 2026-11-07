@@ -14,7 +14,8 @@ android {
 		targetSdk = 36
 		versionCode = 1
 		versionName = lhVersion
-		ndk { abiFilters += "arm64-v8a" }
+		// The phone build is arm64; LH_ANDROID_ABI=x86_64 builds the emulator test APK.
+		ndk { abiFilters += (project.findProperty("lhAbi") as String? ?: "arm64-v8a") }
 	}
 
 	signingConfigs {
