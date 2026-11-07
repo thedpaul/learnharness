@@ -19,7 +19,7 @@ export type Change =
 			chatTitle: string;
 			toolCallId: string;
 			questionText: string;
-			verdict: "wrong" | "unclear";
+			verdict: "wrong" | "unclear" | "duplicate";
 			reason?: string;
 	  }
 	| { id: string; kind: "fact"; at: string; seen: boolean; nodeId: string; name: string; statement: string; was: string; reason?: string };

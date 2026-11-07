@@ -65,7 +65,7 @@ export function ChangesView() {
 						<div key={c.id} className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-card-foreground" data-testid="change-item">
 							<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 								{isNew(c) && <NewMark />}
-								<span>{c.kind === "card" ? (c.verdict === "wrong" ? "Wrong answer key" : "Unclear question") : "Fact corrected"}</span>
+								<span>{c.kind === "card" ? (c.verdict === "wrong" ? "Wrong answer key" : c.verdict === "duplicate" ? "Repeats another card" : "Unclear question") : "Fact corrected"}</span>
 								<span className="ml-auto font-mono normal-case tracking-normal">{when(c.at)}</span>
 							</div>
 							{c.kind === "card" ? (
