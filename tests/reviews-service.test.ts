@@ -53,7 +53,7 @@ test("reviews: only checked-ok cards queue, by topic; answers update the counts"
 	// Unchecked: nothing queues yet; the check runs in the background.
 	assert.equal(reviewStatus().pending, 3);
 	assert.equal(reviewStatus().due, 0);
-	await kickReviewChecks();
+	await kickReviewChecks({ now: true });
 	assert.equal(seen.length, 2, "one batch per session");
 
 	const all = reviewStatus();

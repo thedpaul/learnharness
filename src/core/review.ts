@@ -454,6 +454,16 @@ export function checkIsStale(check: ReviewCheck | undefined): boolean {
 	return !!check && check.v < REVIEW_CHECK_VERSION;
 }
 
+/** v4 → v5 only added the duplicate rule: a v4 check is brought up to date
+ *  by the deck-wide duplicate pass (one call for the deck), not a full
+ *  re-check (a call per six cards) — its verdict, context and notes stand. */
+export const DUPLICATE_PASS_FROM = 4;
+
+/** Stale, and older than what the duplicate pass can bring up to date. */
+export function checkNeedsFullRecheck(check: ReviewCheck | undefined): boolean {
+	return !!check && check.v < DUPLICATE_PASS_FROM;
+}
+
 /** The card as reviewed: the check's context, its explanation rewritten
  *  for shuffled options when it made one, and per-option notes (the
  *  authoring model's own first, the check's for older cards). */

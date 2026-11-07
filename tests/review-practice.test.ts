@@ -56,7 +56,7 @@ test("practice cards are checked with their solution, queue with it, and take a 
 		seen.push(...cards.map((c) => c.solution));
 		return cards.map((c) => ({ id: c.id, verdict: "ok" as const, notes: {} }));
 	});
-	await kickReviewChecks();
+	await kickReviewChecks({ now: true });
 	assert.deepEqual(seen, ["Solution of Integrate x"]);
 	const q = reviewStatus().queue.find((x) => x.chatId === chat.id)!;
 	assert.deepEqual([q.kind, q.solution, q.options], ["problem", "Solution of Integrate x", []]);

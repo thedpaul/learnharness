@@ -30,7 +30,7 @@ test("a check run with nothing to do doesn't block the next one", async () => {
 			},
 		},
 	] as never);
-	await kickReviewChecks();
+	await kickReviewChecks({ now: true });
 	assert.deepEqual(checked, [`${chat.id}:q1`]);
 	assert.equal(reviewStatus().total, 1);
 	setReviewChecker(null);

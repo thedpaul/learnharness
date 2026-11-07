@@ -29,7 +29,7 @@ const quiz = (id: string, q: string, answeredAt: string) => [
 	},
 ];
 
-test("recheck: false graph facts are corrected, and every card (checked ones too) is rechecked with the fix", async () => {
+test("recheck: false graph facts are corrected, and the cards of their sessions (checked ones too) are rechecked with the fix", async () => {
 	const { stores } = await import("../src/server/stores.ts");
 	const { getGraph } = await import("../src/core/graph.ts");
 	const { runRecheck, setFactChecker, recheckStatus } = await import("../src/server/fact-check.ts");
@@ -40,6 +40,9 @@ test("recheck: false graph facts are corrected, and every card (checked ones too
 	const old = new Date(Date.now() - 5 * 86_400_000).toISOString();
 	const chat = stores.chatStore.createChat("Planets");
 	stores.chatStore.saveMessages(chat.id, quiz("q1", "How many planets?", old) as never);
+	// A session no corrected fact came from: its checked card is left alone.
+	const other = stores.chatStore.createChat("Moons");
+	stores.chatStore.saveMessages(other.id, quiz("q9", "How many moons does Earth have?", old) as never);
 	const node = (id: string, statement: string) => ({ id, name: id, statement, aliases: [], createdAt: old, provenance: [{ chatId: chat.id, messageId: "m1" }] });
 	stores.graphStore.appendNode(node("n_pluto", "The solar system has nine planets."));
 	stores.graphStore.appendNode(node("n_sun", "The Sun is a star."));
@@ -50,8 +53,8 @@ test("recheck: false graph facts are corrected, and every card (checked ones too
 		cardCalls.push({ ids: cards.map((c) => c.id), corrections });
 		return cards.map((c): CardResult => ({ id: c.id, verdict: corrections?.length ? "wrong" : "ok", notes: {} }));
 	});
-	await kickReviewChecks();
-	assert.equal(reviewStatus().total, 1);
+	await kickReviewChecks({ now: true });
+	assert.equal(reviewStatus().total, 2);
 
 	const factCalls: string[][] = [];
 	setFactChecker(async ({ facts }) => {
@@ -72,10 +75,12 @@ test("recheck: false graph facts are corrected, and every card (checked ones too
 	assert.ok(!pluto.aliases.includes("The solar system has nine planets."), "the false statement is gone");
 	assert.equal(getGraph(stores.graphStore).nodes.length, 2, "a correction adds no node");
 
-	// The already-checked card was checked again, with the correction.
-	assert.equal(cardCalls.length, 2);
-	assert.match(cardCalls[1]!.corrections![0]!, /nine planets.*eight planets/);
-	assert.equal(reviewStatus().total, 0);
+	// The already-checked card was checked again, with the correction; the
+	// other session's card wasn't (nothing it rests on changed).
+	assert.equal(cardCalls.length, 3, "the first check took one call per session");
+	assert.deepEqual(cardCalls[2]!.ids, [`${chat.id}:q1`]);
+	assert.match(cardCalls[2]!.corrections![0]!, /nine planets.*eight planets/);
+	assert.equal(reviewStatus().total, 1);
 	assert.equal(reviewStatus().held.length, 1);
 
 	// Changes: the flagged question (for its session) and the corrected fact, unseen until marked.
@@ -95,7 +100,7 @@ test("recheck: false graph facts are corrected, and every card (checked ones too
 	// Not forced: everything is inside the window, so nothing is checked again.
 	await runRecheck();
 	assert.equal(factCalls.length, 1);
-	assert.equal(cardCalls.length, 2);
+	assert.equal(cardCalls.length, 3);
 	setFactChecker(null);
 	setReviewChecker(null);
 });

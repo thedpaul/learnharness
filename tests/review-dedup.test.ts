@@ -70,7 +70,7 @@ test("the checker sees the older deck; the newer repeat leaves the queue and its
 			: c.id === orig ? { id: c.id, verdict: "duplicate", duplicateOf: repeat, notes: {} }
 			: { id: c.id, verdict: "ok", notes: {} });
 	});
-	await kickReviewChecks();
+	await kickReviewChecks({ now: true });
 	assert.deepEqual(existingSeen[orig], [], "nothing older than the first card");
 	assert.ok(existingSeen[repeat]!.includes(orig), "the newer session's check sees the older card");
 

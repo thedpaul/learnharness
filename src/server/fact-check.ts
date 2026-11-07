@@ -3,8 +3,9 @@
  * (contracts/graph.ts), but facts drift and extraction can be wrong. One
  * run re-verifies the graph's propositions (fact-checker.ts, a batch per
  * birth session), appends a CORRECTION line for each false one (getGraph
- * swaps the statement in), then rechecks the review cards — already checked
- * ones too — with those corrections in hand (reviews.ts recheckCards).
+ * swaps the statement in), then rechecks the review cards of the sessions
+ * those facts came from, with the corrections in hand (reviews.ts
+ * recheckCards).
  *
  * Verdicts go to graph/fact-checks.jsonl (synced with the graph ledgers):
  * a node is re-verified only once its last check is older than the window.
@@ -148,7 +149,6 @@ export function runRecheck(opts: { force?: boolean } = {}): Promise<void> {
 			Object.assign(status, { phase: "cards", done: 0, total: 0 });
 			changed();
 			await recheckCards({
-				before,
 				corrections,
 				onProgress: (done, total) => {
 					Object.assign(status, { done, total });

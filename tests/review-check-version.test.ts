@@ -29,10 +29,10 @@ const quiz = (id: string, answeredAt: string) => [
 	},
 ];
 
-test("check version: an older check keeps the card reviewable and is re-checked once", async () => {
+test("check version: a check from before the concept (v3) keeps the card reviewable and is fully re-checked once", async () => {
 	const { stores } = await import("../src/server/stores.ts");
 	const { kickReviewChecks, reviewStatus, setReviewChecker } = await import("../src/server/reviews.ts");
-	const { REVIEW_CHECK_VERSION } = await import("../src/core/review.ts");
+	const { REVIEW_CHECK_VERSION, DUPLICATE_PASS_FROM } = await import("../src/core/review.ts");
 	type CardResult = import("../src/agent/subagents/card-checker.ts").CardCheckResult;
 
 	const old = new Date(Date.now() - 5 * 86_400_000).toISOString();
@@ -41,7 +41,7 @@ test("check version: an older check keeps the card reviewable and is re-checked 
 	const id = `${chat.id}:q1`;
 	const checks = path.join(process.env.LH_DATA_DIR!, "review-checks.jsonl");
 	fs.mkdirSync(path.dirname(checks), { recursive: true });
-	fs.writeFileSync(checks, `${JSON.stringify({ card: id, at: old, v: REVIEW_CHECK_VERSION - 1, verdict: "ok", notes: { "1": "Variance is d_k" } })}\n`);
+	fs.writeFileSync(checks, `${JSON.stringify({ card: id, at: old, v: DUPLICATE_PASS_FROM - 1, verdict: "ok", notes: { "1": "Variance is d_k" } })}\n`);
 
 	const calls: string[][] = [];
 	let release!: () => void;
@@ -53,7 +53,7 @@ test("check version: an older check keeps the card reviewable and is re-checked 
 	});
 
 	// While the re-check runs, the card is still in the deck.
-	const running = kickReviewChecks();
+	const running = kickReviewChecks({ now: true });
 	assert.equal(reviewStatus().total, 1, "the older check still counts");
 	release();
 	await running;
@@ -61,7 +61,7 @@ test("check version: an older check keeps the card reviewable and is re-checked 
 
 	const lines = fs.readFileSync(checks, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { v: number; notes?: Record<string, string> });
 	assert.equal(lines.at(-1)!.v, REVIEW_CHECK_VERSION);
-	await kickReviewChecks();
+	await kickReviewChecks({ now: true });
 	assert.equal(calls.length, 1, "a current check is not re-checked again");
 	assert.equal(reviewStatus().total, 1);
 	setReviewChecker(null);
