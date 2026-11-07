@@ -19,6 +19,8 @@ export type CardToCheck = {
 	explanation?: string;
 	/** The teaching right before the question. */
 	lead?: string;
+	/** A practice problem's model solution (no options). */
+	solution?: string;
 };
 
 export type CardCheckResult = {
@@ -79,7 +81,7 @@ const checkSchema = Type.Object({
 	),
 });
 
-const SYSTEM = `You check flashcards before they enter a learner's spaced-review deck. Each card is a multiple-choice question a tutor asked during a lesson; the learner will see it again days or months later, alone, without the lesson.
+const SYSTEM = `You check flashcards before they enter a learner's spaced-review deck. Most cards are multiple-choice questions a tutor asked during a lesson; the learner will see it again days or months later, alone, without the lesson.
 
 For every card:
 1. Solve it yourself from the options. Compare with the marked answer. If the marked answer is wrong, or another option is equally correct, the verdict is "wrong" — a false card is worse than no card.
@@ -88,6 +90,8 @@ For every card:
 4. Check the tutor's explanation as the learner will read it in review, after answering, with the options shuffled. If it names options by letter, number or position, gets something wrong, or writes math outside LaTeX, rewrite it: same reasoning, options named by what they say. If it is already right, leave the explanation empty.
 5. Name the one concept the card tests. Cards from any lesson that test the same idea are reviewed side by side, so when a concept in use is the same idea, give its name exactly.
 6. Check it against the cards already in the deck, and against the cards before it in this batch. If one asks essentially the same question — the same fact or reasoning, so that answering one means you'd answer the other — the verdict is "duplicate" with that card's id in duplicateOf (a card that is also wrong or unclear gets that verdict instead). Testing the same concept from another angle, in another case, or one step further is not a duplicate: keep it. Still write the context, notes and concept for a duplicate.
+
+Some cards are practice problems instead: no options, a model solution the learner compares their own work with after trying it. For those, step 1 is to solve the problem yourself and check the model solution: if it reaches a wrong result or skips a step it needs, the verdict is "wrong". Steps 2, 5 and 6 apply as for any card; leave notes and the explanation empty.
 
 Use markdown like the cards do, and write every formula, symbol and variable in LaTeX — inline $...$, e.g. $\\sqrt{d_k}$, $x_t = \\sqrt{\\bar\\alpha_t}\\,x_0$, $\\sum_j e^{z_j}$ — in notes, context, explanations and reasons alike. Never Unicode math (√, ∑, ᾱ, ≠, ≤) or bare d_k / x^2: the learner's screen renders LaTeX, and plain underscores turn into italics. Submit every card in one call.`;
 
@@ -101,9 +105,13 @@ const oneLine = (text: string) => {
 function cardBlock(c: CardToCheck): string {
 	const options = c.options.map((o) => `${o.index}. ${o.label}`).join("\n");
 	const key = c.correctIndices.join(", ");
+	const lesson = c.lead ? `### The lesson right before it\n${c.lead}` : "### The lesson right before it\n(none recorded)";
+	if (c.solution !== undefined) {
+		return [`## Card ${c.id} (practice problem)`, lesson, `### Problem\n${c.questionText}`, `### Model solution\n${c.solution}`].join("\n\n");
+	}
 	return [
 		`## Card ${c.id}`,
-		c.lead ? `### The lesson right before it\n${c.lead}` : "### The lesson right before it\n(none recorded)",
+		lesson,
 		`### Question\n${c.questionText}`,
 		`### Options\n${options}`,
 		`### Marked correct: ${key}`,

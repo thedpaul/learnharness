@@ -334,6 +334,9 @@ export type ReviewQuestion = {
 	questionText: string;
 	options: { index: number; label: string }[];
 	multiple: boolean;
+	/** A practice problem: worked, then `solution` revealed and self-graded. */
+	kind?: "problem";
+	solution?: string;
 	box: number;
 	/** How many times it has been reviewed (seeds the option shuffle). */
 	reviews: number;
@@ -429,6 +432,7 @@ export function reviewStatus(now = new Date(), opts: { topic?: string; mix?: boo
 			questionText: c.questionText,
 			options: c.options.map((o) => ({ index: o.index, label: o.label })),
 			multiple: c.correctIndices.length > 1,
+			...(c.kind === "problem" ? { kind: "problem" as const, solution: c.solution ?? "" } : {}),
 			box: c.schedule.box,
 			reviews: c.schedule.reviews,
 		})),
@@ -470,14 +474,16 @@ export type ReviewResult = {
 	nextDueAt: string;
 };
 
-/** Grade one review and append it to the ledger. null = unknown card. */
-export function recordReview(cardId: string, selected: number[], confidence: number | undefined, now = new Date()): ReviewResult | null {
+/** Grade one review and append it to the ledger. null = unknown card, or
+ *  an answer of the wrong form: picked options for a quiz card, the
+ *  learner's own verdict (true = got it) for a practice problem. */
+export function recordReview(cardId: string, answer: number[] | boolean, confidence: number | undefined, now = new Date()): ReviewResult | null {
 	const checks = readChecks();
 	const aliases = duplicateAliases(checks);
 	const cards = allCards();
 	const card = deckCards(cards.filter((c) => c.id === cardId), checks, aliases)[0];
-	if (!card) return null;
-	const correct = isCorrect(selected, card.correctIndices);
+	if (!card || (card.kind === "problem") !== (typeof answer === "boolean")) return null;
+	const correct = typeof answer === "boolean" ? answer : isCorrect(answer, card.correctIndices);
 	const event: ReviewEvent = {
 		card: card.id,
 		at: now.toISOString(),

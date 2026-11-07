@@ -33,6 +33,9 @@ type Question = {
 	multiple: boolean;
 	box: number;
 	reviews: number;
+	/** A practice problem: worked, revealed, self-graded. */
+	kind?: "problem";
+	solution?: string;
 };
 type Topic = { id: string; title: string; total: number; due: number; related: string[] };
 type Held = { id: string; chatTitle: string; questionText: string; verdict: string; reason?: string };
@@ -219,7 +222,7 @@ export function ReviewSession() {
 					{error && <p className="text-sm text-destructive">{error}</p>}
 					{!status && !error && <p className="text-sm text-muted-foreground">Loading…</p>}
 					{status && card && (
-						<ReviewCardView
+						<CardView
 							key={card.id}
 							card={card}
 							position={`${i + 1} / ${status.queue.length}`}
@@ -587,7 +590,6 @@ function ReviewCardView({ card, position, onNext, onAnswered, onSubmitting }: {
 		}
 	};
 	const key = new Set(result?.correctIndices ?? []);
-	const value = CONFIDENCE_STOPS[confIdx]!;
 
 	return (
 		<article className="flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-lg" data-testid="review-card">
@@ -643,39 +645,7 @@ function ReviewCardView({ card, position, onNext, onAnswered, onSubmitting }: {
 			</div>
 			{!result ? (
 				<>
-					<div className="flex items-center gap-3">
-						<span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">Confidence</span>
-						<div className="relative h-4 min-w-0 flex-1">
-							<div
-								aria-hidden
-								className="pointer-events-none absolute top-1/2 left-2 right-2 h-1.5 -translate-y-1/2 rounded-full border border-border"
-								style={confidenceRailStyle(value)}
-							/>
-							<input
-								type="range"
-								min={0}
-								max={100}
-								step={1}
-								value={value}
-								aria-label="Confidence — the probability your answer is correct"
-								onChange={(e) => {
-									const v = Number(e.target.value);
-									let best = 0;
-									for (let k = 1; k < CONFIDENCE_STOPS.length; k++) {
-										if (Math.abs(CONFIDENCE_STOPS[k]! - v) < Math.abs(CONFIDENCE_STOPS[best]! - v)) best = k;
-									}
-									setConfIdx(best);
-								}}
-								style={{ color: CONFIDENCE_COLORS[confIdx] }}
-								className={cn(
-									"absolute inset-0 h-4 w-full cursor-pointer appearance-none bg-transparent outline-none",
-									"[&::-webkit-slider-runnable-track]:h-4 [&::-webkit-slider-runnable-track]:bg-transparent",
-									"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-current",
-								)}
-							/>
-						</div>
-						<span className="w-9 shrink-0 text-right font-mono text-sm tabular-nums">{value}%</span>
-					</div>
+					<ConfidenceSlider index={confIdx} onChange={setConfIdx} />
 					{error && <p className="text-sm text-destructive">{error}</p>}
 					<button
 						type="button"
@@ -706,6 +676,173 @@ function ReviewCardView({ card, position, onNext, onAnswered, onSubmitting }: {
 					>
 						Next
 					</button>
+				</>
+			)}
+		</article>
+	);
+}
+
+/** The confidence slider, snapping to the dock's stops. */
+function ConfidenceSlider({ index, onChange, label = "Confidence — the probability your answer is correct" }: { index: number; onChange: (index: number) => void; label?: string }) {
+	const value = CONFIDENCE_STOPS[index]!;
+	return (
+		<div className="flex items-center gap-3">
+			<span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">Confidence</span>
+			<div className="relative h-4 min-w-0 flex-1">
+				<div
+					aria-hidden
+					className="pointer-events-none absolute top-1/2 left-2 right-2 h-1.5 -translate-y-1/2 rounded-full border border-border"
+					style={confidenceRailStyle(value)}
+				/>
+				<input
+					type="range"
+					min={0}
+					max={100}
+					step={1}
+					value={value}
+					aria-label={label}
+					onChange={(e) => {
+						const v = Number(e.target.value);
+						let best = 0;
+						for (let k = 1; k < CONFIDENCE_STOPS.length; k++) {
+							if (Math.abs(CONFIDENCE_STOPS[k]! - v) < Math.abs(CONFIDENCE_STOPS[best]! - v)) best = k;
+						}
+						onChange(best);
+					}}
+					style={{ color: CONFIDENCE_COLORS[index] }}
+					className={cn(
+						"absolute inset-0 h-4 w-full cursor-pointer appearance-none bg-transparent outline-none",
+						"[&::-webkit-slider-runnable-track]:h-4 [&::-webkit-slider-runnable-track]:bg-transparent",
+						"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-current",
+					)}
+				/>
+			</div>
+			<span className="w-9 shrink-0 text-right font-mono text-sm tabular-nums">{value}%</span>
+		</div>
+	);
+}
+
+/** One review card: a quiz question, or a practice problem. */
+function CardView(props: Parameters<typeof ReviewCardView>[0]) {
+	return props.card.kind === "problem" ? <ProblemCardView {...props} /> : <ReviewCardView {...props} />;
+}
+
+/**
+ * A practice problem in review (owner, 2026-11-07): work it out (the
+ * scratch box is optional and never saved), say how sure you are, reveal
+ * the model solution, then grade yourself. No model call.
+ */
+function ProblemCardView({ card, position, onNext, onAnswered, onSubmitting }: Parameters<typeof ReviewCardView>[0]) {
+	const [scratch, setScratch] = useState("");
+	const [confIdx, setConfIdx] = useState(DEFAULT_CONFIDENCE_INDEX);
+	const [revealed, setRevealed] = useState(false);
+	const [result, setResult] = useState<Result | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const grade = async (gotIt: boolean) => {
+		if (busy || result) return;
+		setBusy(true);
+		setError(null);
+		onSubmitting();
+		try {
+			const res = await fetch("/api/reviews", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ card: card.id, gotIt, confidence: CONFIDENCE_STOPS[confIdx] }),
+			});
+			const json = (await res.json()) as Result & { message?: string };
+			if (!res.ok) throw new Error(json.message ?? "Couldn't save the answer");
+			setResult(json);
+			onAnswered();
+			playCue(json.correct ? "correct" : "wrong");
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Couldn't save the answer");
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	return (
+		<article className="flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-lg" data-testid="review-card" data-kind="problem">
+			<div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+				<Link href={`/chat/${card.chatId}`} className="min-w-0 truncate hover:text-foreground">
+					{card.chatTitle}
+				</Link>
+				<span className="shrink-0 font-mono">Problem · {position}</span>
+			</div>
+			{card.context && (
+				<div className="lh-prose rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground" data-testid="review-context">
+					<ToolContentResponse>{card.context}</ToolContentResponse>
+				</div>
+			)}
+			<div className="lh-prose text-[0.95rem]">
+				<ToolContentResponse>{card.questionText}</ToolContentResponse>
+			</div>
+			<textarea
+				value={scratch}
+				onChange={(e) => setScratch(e.target.value)}
+				readOnly={revealed}
+				rows={3}
+				placeholder="Work it out here (optional, not saved)"
+				data-testid="review-scratch"
+				className="w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+			/>
+			{!revealed ? (
+				<>
+					<ConfidenceSlider index={confIdx} onChange={setConfIdx} label="Confidence — the probability you solved it" />
+					<button
+						type="button"
+						onClick={() => setRevealed(true)}
+						data-testid="review-reveal"
+						className="self-end rounded-lg bg-primary px-4 py-2 font-ui text-sm font-medium text-primary-foreground"
+					>
+						Reveal solution
+					</button>
+				</>
+			) : (
+				<>
+					<div className="lh-prose rounded-lg border px-3 py-2 text-sm" data-testid="review-solution">
+						<ToolContentResponse>{card.solution ?? ""}</ToolContentResponse>
+					</div>
+					{error && <p className="text-sm text-destructive">{error}</p>}
+					{!result ? (
+						<div className="flex justify-end gap-2">
+							<button
+								type="button"
+								onClick={() => void grade(false)}
+								disabled={busy}
+								data-testid="review-missed"
+								className="rounded-lg border px-4 py-2 font-ui text-sm font-medium hover:bg-accent/50 disabled:opacity-40"
+							>
+								Missed it
+							</button>
+							<button
+								type="button"
+								onClick={() => void grade(true)}
+								disabled={busy}
+								data-testid="review-got-it"
+								className="rounded-lg bg-primary px-4 py-2 font-ui text-sm font-medium text-primary-foreground disabled:opacity-40"
+							>
+								Got it
+							</button>
+						</div>
+					) : (
+						<>
+							<p className={cn("text-sm font-medium", result.correct ? "text-green-500" : "text-red-500")} data-testid="review-verdict">
+								{result.correct ? "Got it" : "Missed it"}
+								<span className="ml-2 font-normal text-muted-foreground">· back {whenLabel(result.nextDueAt)}</span>
+							</p>
+							<button
+								type="button"
+								onClick={() => onNext(result.correct)}
+								data-testid="review-next"
+								className="self-end rounded-lg bg-primary px-4 py-2 font-ui text-sm font-medium text-primary-foreground"
+							>
+								Next
+							</button>
+						</>
+					)}
 				</>
 			)}
 		</article>

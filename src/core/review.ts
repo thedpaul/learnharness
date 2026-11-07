@@ -28,6 +28,12 @@ export interface ReviewCard {
 	chatTitle: string;
 	/** The plan node the question was about (teach checks), if any. */
 	nodeId?: string;
+	/** A practice problem (owner, 2026-11-07): no options — reviewed by
+	 *  working it, revealing `solution` and grading yourself. Absent = a
+	 *  multiple-choice quiz card. */
+	kind?: "problem";
+	/** The problem's model solution (problem cards). */
+	solution?: string;
 	questionText: string;
 	/** Stored order; `note` = the authoring model's per-option comment. */
 	options: { index: number; label: string; note?: string }[];
@@ -48,6 +54,9 @@ export interface ReviewAnswer {
 	correct: boolean;
 	/** 0-100; absent on "I don't know". */
 	confidence?: number;
+	/** Right but needed help (a practice problem solved with hints): the
+	 *  next interval is halved, as for a low-confidence right answer. */
+	hinted?: boolean;
 }
 
 /** One reviews.jsonl line. */
@@ -64,11 +73,77 @@ interface NativeLike {
 	toolCallId?: string;
 	toolName?: string;
 	details?: unknown;
+	isError?: boolean;
+	timestamp?: number;
+}
+
+/** Concluded practice problems: every outcome but a dismissal. */
+const PROBLEM_OUTCOMES: Record<string, { correct: boolean; hinted?: boolean }> = {
+	solved: { correct: true },
+	solvedWithHints: { correct: true, hinted: true },
+	movedOn: { correct: false },
+	surrendered: { correct: false },
+};
+
+/** Cards from a practice session: one per concluded problem (owner,
+ *  2026-11-07), keyed by the problem call. The outcome is the first answer. */
+function extractProblemCards(chatId: string, chatTitle: string, messages: readonly NativeLike[]): ReviewCard[] {
+	const failed = new Set<string>();
+	for (const m of messages) if (m.role === "toolResult" && m.isError && typeof m.toolCallId === "string") failed.add(m.toolCallId);
+	const cards: ReviewCard[] = [];
+	let lead = "";
+	let posed: { id: string; statement: string; solution: string; lead: string } | undefined;
+	const concluded = new Map<string, { outcome: string; problem: NonNullable<typeof posed> }>();
+	for (const m of messages) {
+		if (m.role === "user") lead = "";
+		if (m.role === "toolResult" && typeof m.toolCallId === "string") {
+			const hit = concluded.get(m.toolCallId);
+			const first = hit && !m.isError ? PROBLEM_OUTCOMES[hit.outcome] : undefined;
+			if (hit && first) {
+				cards.push({
+					id: `${chatId}:${hit.problem.id}`,
+					chatId,
+					chatTitle,
+					kind: "problem",
+					questionText: hit.problem.statement,
+					solution: hit.problem.solution,
+					options: [],
+					correctIndices: [],
+					firstAnswer: {
+						at: new Date(typeof m.timestamp === "number" ? m.timestamp : 0).toISOString(),
+						correct: first.correct,
+						...(first.hinted ? { hinted: true } : {}),
+					},
+					lead: hit.problem.lead || undefined,
+				});
+			}
+			concluded.delete(m.toolCallId);
+			continue;
+		}
+		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+		for (const b of m.content as Array<{ type?: string; id?: string; name?: string; text?: string; arguments?: unknown }>) {
+			if (b.type === "text" && typeof b.text === "string") lead = `${lead}\n\n${b.text}`.slice(-LEAD_CHARS);
+			if (b.type !== "toolCall" || typeof b.id !== "string" || failed.has(b.id)) continue;
+			const args = (b.arguments ?? {}) as { statement?: unknown; modelSolution?: unknown; outcome?: unknown };
+			if (b.name === "problem" && typeof args.statement === "string" && typeof args.modelSolution === "string") {
+				posed = { id: b.id, statement: args.statement, solution: args.modelSolution, lead: lead.trim() };
+			} else if (b.name === "conclude" && posed && typeof args.outcome === "string") {
+				concluded.set(b.id, { outcome: args.outcome, problem: posed });
+				posed = undefined;
+			}
+		}
+	}
+	return cards;
 }
 
 /** Cards from one session's native messages: graded quiz answers with
- *  options and a known correct answer. Dismissed questions never count. */
+ *  options and a known correct answer, and concluded practice problems.
+ *  Dismissed questions and problems never count. */
 export function extractReviewCards(chatId: string, chatTitle: string, messages: readonly NativeLike[]): ReviewCard[] {
+	return [...extractQuizCards(chatId, chatTitle, messages), ...extractProblemCards(chatId, chatTitle, messages)];
+}
+
+function extractQuizCards(chatId: string, chatTitle: string, messages: readonly NativeLike[]): ReviewCard[] {
 	const nodeOf = new Map<string, string>();
 	const leadOf = new Map<string, string>();
 	// The teaching since the learner last spoke: what a question leans on.
@@ -133,7 +208,9 @@ export function scheduleCard(card: ReviewCard, events: readonly ReviewEvent[], n
 	let unsure = false;
 	for (const h of history) {
 		box = h.correct ? Math.min(box + 1, REVIEW_BOX_DAYS.length - 1) : 0;
-		unsure = h.correct && (h.confidence ?? 0) < UNSURE_BELOW;
+		// No confidence on a right answer = a practice problem's outcome,
+		// where only `hinted` says it was shaky.
+		unsure = h.correct && (h.hinted === true || (h.confidence ?? 100) < UNSURE_BELOW);
 	}
 	box = Math.max(box, 0);
 	const last = history.at(-1)!;
